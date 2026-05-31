@@ -83,6 +83,10 @@ public sealed class ChannelStripViewModel : ObservableObject
 
     public bool HasHiddenAssignedApps => HiddenAssignedProcessIcons.Count > 0;
 
+    public bool HasSingleRowAssignedApps => AssignedProcessIcons.Count <= 7;
+
+    public bool HasMultiRowAssignedApps => AssignedProcessIcons.Count > 7;
+
     public bool IsEndpointSelectorVisible => false;
 
     public string? IconPath { get; private set; }
@@ -249,6 +253,8 @@ public sealed class ChannelStripViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAssignedApps));
         OnPropertyChanged(nameof(HasNoAssignedApps));
         OnPropertyChanged(nameof(HasHiddenAssignedApps));
+        OnPropertyChanged(nameof(HasSingleRowAssignedApps));
+        OnPropertyChanged(nameof(HasMultiRowAssignedApps));
     }
 
     public void SetVolumeFromController(float volume)
@@ -342,6 +348,8 @@ public sealed class ChannelStripViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAssignedApps));
         OnPropertyChanged(nameof(HasNoAssignedApps));
         OnPropertyChanged(nameof(HasHiddenAssignedApps));
+        OnPropertyChanged(nameof(HasSingleRowAssignedApps));
+        OnPropertyChanged(nameof(HasMultiRowAssignedApps));
     }
 
     private void BeginRename()

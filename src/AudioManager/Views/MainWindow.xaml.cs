@@ -160,22 +160,19 @@ public partial class MainWindow : Window
 
     private static System.Drawing.Icon LoadTrayIcon()
     {
-        try
+        var path = Path.Combine(AppContext.BaseDirectory, "assets", "icon.png");
+        if (File.Exists(path))
         {
-            var processPath = Process.GetCurrentProcess().MainModule?.FileName;
-            if (!string.IsNullOrWhiteSpace(processPath))
-            {
-                var associatedIcon = System.Drawing.Icon.ExtractAssociatedIcon(processPath);
-                if (associatedIcon is not null)
-                {
-                    return (System.Drawing.Icon)associatedIcon.Clone();
-                }
-            }
-        }
-        catch
-        {
+            using var bitmap = new Bitmap(path);
+            var handle = bitmap.GetHicon();
+            var icon = (System.Drawing.Icon)System.Drawing.Icon.FromHandle(handle).Clone();
+            DestroyIcon(handle);
+            return icon;
         }
 
         return System.Drawing.SystemIcons.Application;
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 }
