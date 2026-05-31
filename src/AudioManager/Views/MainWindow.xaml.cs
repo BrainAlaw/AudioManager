@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Forms;
+using System.Windows.Media.Imaging;
 using AudioManager.ViewModels;
 
 namespace AudioManager.Views;
@@ -17,6 +19,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.SetShellVisible(true);
+        Icon = LoadWindowIcon();
 
         _notifyIcon = new NotifyIcon
         {
@@ -140,5 +143,17 @@ public partial class MainWindow : Window
             var isVisibleForUi = IsVisible && WindowState != WindowState.Minimized;
             viewModel.SetShellVisible(isVisibleForUi);
         }
+    }
+
+    private static BitmapImage LoadWindowIcon()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "assets", "icon.png");
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.UriSource = new Uri(path, UriKind.Absolute);
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 }
