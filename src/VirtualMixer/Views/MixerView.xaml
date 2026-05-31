@@ -1,0 +1,28 @@
+<UserControl x:Class="VirtualMixer.Views.MixerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:viewmodels="clr-namespace:VirtualMixer.ViewModels"
+             xmlns:views="clr-namespace:VirtualMixer.Views"
+             d:DataContext="{d:DesignInstance Type=viewmodels:MainWindowViewModel}"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="1100"
+             FontFamily="{StaticResource Vm.DisplayFont}">
+    <Grid Margin="8">
+        <ItemsControl ItemsSource="{Binding Channels}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Stretch">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <UniformGrid Columns="6" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <views:ChannelStripView Width="150" Margin="8,0" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</UserControl>

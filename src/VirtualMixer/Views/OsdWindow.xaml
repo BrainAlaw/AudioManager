@@ -1,0 +1,62 @@
+<Window x:Class="VirtualMixer.Views.OsdWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="420"
+        Height="108"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Opacity="0">
+    <Border x:Name="Root"
+            CornerRadius="8"
+            Background="#D90B1018"
+            BorderBrush="#4D30F2D2"
+            BorderThickness="1"
+            Padding="18">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="56" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Width="44"
+                    Height="44"
+                    CornerRadius="6"
+                    Background="#182232"
+                    BorderBrush="#30F2D2"
+                    BorderThickness="1">
+                <TextBlock x:Name="IconText"
+                           Text="CH"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Foreground="#30F2D2" />
+            </Border>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <DockPanel>
+                    <TextBlock x:Name="ChannelName"
+                               DockPanel.Dock="Left"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="#F4F7FB" />
+                    <TextBlock x:Name="VolumePercent"
+                               DockPanel.Dock="Right"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="#30F2D2"
+                               HorizontalAlignment="Right" />
+                </DockPanel>
+                <Border Height="10" Margin="0,12,0,0" CornerRadius="3" Background="#263244">
+                    <ProgressBar x:Name="VolumeBar"
+                                 Maximum="100"
+                                 Height="10"
+                                 Style="{StaticResource Vm.OsdProgressBar}" />
+                </Border>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

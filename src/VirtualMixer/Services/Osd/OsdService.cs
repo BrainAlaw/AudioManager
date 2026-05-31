@@ -1,0 +1,53 @@
+using System.Windows.Threading;
+using System.Windows;
+using VirtualMixer.Contracts;
+using VirtualMixer.Models;
+using VirtualMixer.Views;
+using WpfApplication = System.Windows.Application;
+
+namespace VirtualMixer.Services.Osd;
+
+public sealed class OsdService : IOsdService
+{
+    private readonly DispatcherTimer _hideTimer;
+    private OsdWindow? _window;
+
+    public OsdService()
+    {
+        _hideTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _hideTimer.Tick += (_, _) => Hide();
+    }
+
+    public void ShowVolumeChange(AudioChannelState channel)
+    {
+        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        {
+            WpfApplication.Current.Dispatcher.Invoke(() => ShowVolumeChange(channel));
+            return;
+        }
+
+        _window ??= new OsdWindow();
+        _window.Update(channel);
+        _window.ShowActivated = false;
+        _window.Show();
+        _window.FadeIn();
+
+        _hideTimer.Stop();
+        _hideTimer.Start();
+    }
+
+    public void Hide()
+    {
+        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        {
+            WpfApplication.Current.Dispatcher.Invoke(Hide);
+            return;
+        }
+
+        _hideTimer.Stop();
+        _window?.FadeOut();
+    }
+}

@@ -1,0 +1,164 @@
+<Window x:Class="VirtualMixer.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:VirtualMixer.ViewModels"
+        xmlns:views="clr-namespace:VirtualMixer.Views"
+        xmlns:converters="clr-namespace:VirtualMixer.Converters"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="VirtualMixer"
+        Width="1180"
+        Height="720"
+        MinWidth="1180"
+        MinHeight="720"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        FontFamily="{StaticResource Vm.DisplayFont}"
+        Background="{StaticResource Vm.BackgroundBrush}"
+        PreviewMouseDown="OnWindowPreviewMouseDown">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="56"
+                            ResizeBorderThickness="6"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <converters:EnumEqualsConverter x:Key="Vm.EnumEqualsConverter" />
+        <Style x:Key="Vm.HeaderNavButton" TargetType="Button" BasedOn="{StaticResource Vm.SmallButton}">
+            <Setter Property="FontFamily" Value="{StaticResource Vm.DisplayFont}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Padding" Value="18,8" />
+        </Style>
+
+        <Style x:Key="Vm.HeaderWindowButton" TargetType="Button" BasedOn="{StaticResource Vm.TitleButton}">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Background="{StaticResource Vm.BackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0"
+              Background="{StaticResource Vm.PanelBrush}"
+              MouseLeftButtonDown="OnTitleBarMouseDown">
+            <Image Source="pack://application:,,,/header_logo.png"
+                   Width="77"
+                   Height="55"
+                   Margin="18,0,0,0"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Left"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+
+            <Grid HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center">
+                    <RadioButton Content="M&#x2009;i&#x2009;x&#x2009;e&#x2009;r"
+                                 GroupName="MainViewNav"
+                                 IsChecked="{Binding CurrentViewType, Converter={StaticResource Vm.EnumEqualsConverter}, ConverterParameter=Mixer}"
+                                 Command="{Binding SwitchViewCommand}"
+                                 CommandParameter="{x:Static vm:ViewType.Mixer}"
+                                 Style="{StaticResource Vm.NavButton}"
+                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                 Margin="0,0,8,0" />
+                    <RadioButton Content="A&#x2009;p&#x2009;p&#x2009;s&#x2009; &#x2009;L&#x2009;i&#x2009;s&#x2009;t"
+                                 GroupName="MainViewNav"
+                                 IsChecked="{Binding CurrentViewType, Converter={StaticResource Vm.EnumEqualsConverter}, ConverterParameter=AppsList}"
+                                 Command="{Binding SwitchViewCommand}"
+                                 CommandParameter="{x:Static vm:ViewType.AppsList}"
+                                 Style="{StaticResource Vm.NavButton}"
+                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                 Margin="0,0,8,0" />
+                    <RadioButton Content="S&#x2009;e&#x2009;t&#x2009;t&#x2009;i&#x2009;n&#x2009;g&#x2009;s"
+                                 GroupName="MainViewNav"
+                                 IsChecked="{Binding CurrentViewType, Converter={StaticResource Vm.EnumEqualsConverter}, ConverterParameter=Settings}"
+                                 Command="{Binding SwitchViewCommand}"
+                                 CommandParameter="{x:Static vm:ViewType.Settings}"
+                                 Style="{StaticResource Vm.NavButton}"
+                                 shell:WindowChrome.IsHitTestVisibleInChrome="True" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Margin="0,0,8,0"
+                        Orientation="Horizontal">
+                <Button Style="{StaticResource Vm.HeaderWindowButton}"
+                        Content=""
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                        Click="OnMinimizeClick"
+                        ToolTip="Minimize" />
+                <Button Style="{StaticResource Vm.HeaderWindowButton}"
+                        Content=""
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                        Click="OnMaximizeClick"
+                        ToolTip="Maximize or restore" />
+                <Button Style="{StaticResource Vm.HeaderWindowButton}"
+                        Content=""
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                        Click="OnCloseClick"
+                        ToolTip="Close" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="16,0,16,16">
+            <views:MixerView>
+                <views:MixerView.Style>
+                    <Style TargetType="views:MixerView">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentViewType}" Value="{x:Static vm:ViewType.AppsList}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding CurrentViewType}" Value="{x:Static vm:ViewType.Settings}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:MixerView.Style>
+            </views:MixerView>
+
+            <views:AppsListView>
+                <views:AppsListView.Style>
+                    <Style TargetType="views:AppsListView">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentViewType}" Value="{x:Static vm:ViewType.AppsList}">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:AppsListView.Style>
+            </views:AppsListView>
+
+            <views:SettingsView>
+                <views:SettingsView.Style>
+                    <Style TargetType="views:SettingsView">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentViewType}" Value="{x:Static vm:ViewType.Settings}">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:SettingsView.Style>
+            </views:SettingsView>
+        </Grid>
+    </Grid>
+</Window>

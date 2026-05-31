@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>VirtualMixer</AssemblyName>
+    <RootNamespace>VirtualMixer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.1.0" />
+    <PackageReference Include="MaterialDesignColors" Version="3.1.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\font\VeniteAdoremus-rgRBA.ttf" />
+    <Resource Include="..\..\font\VeniteAdoremusStraight-Yzo6v.ttf" />
+    <Resource Include="..\..\assets\header_logo.png" />
+  </ItemGroup>
+
+  <Target Name="CopyFontAssets" AfterTargets="Build">
+    <MakeDir Directories="$(TargetDir)font" />
+    <Copy SourceFiles="..\..\font\VeniteAdoremus-rgRBA.ttf;..\..\font\VeniteAdoremusStraight-Yzo6v.ttf"
+          DestinationFolder="$(TargetDir)font"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
