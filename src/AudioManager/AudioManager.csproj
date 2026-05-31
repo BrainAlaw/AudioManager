@@ -29,12 +29,20 @@
     <Resource Include="Resources\Icons\app.ico" />
     <None Include="Resources\Icons\app.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\icon.png" CopyToOutputDirectory="PreserveNewest" Link="assets\icon.png" />
+    <None Include="..\..\font\VeniteAdoremus-rgRBA.ttf" CopyToPublishDirectory="PreserveNewest" Link="font\VeniteAdoremus-rgRBA.ttf" />
+    <None Include="..\..\font\VeniteAdoremusStraight-Yzo6v.ttf" CopyToPublishDirectory="PreserveNewest" Link="font\VeniteAdoremusStraight-Yzo6v.ttf" />
   </ItemGroup>
 
   <Target Name="CopyFontAssets" AfterTargets="Build">
     <MakeDir Directories="$(TargetDir)font" />
     <Copy SourceFiles="..\..\font\VeniteAdoremus-rgRBA.ttf;..\..\font\VeniteAdoremusStraight-Yzo6v.ttf"
           DestinationFolder="$(TargetDir)font"
+          SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyFontPublishAssets" AfterTargets="Publish">
+    <MakeDir Directories="$(PublishDir)font" />
+    <Copy SourceFiles="..\..\font\VeniteAdoremus-rgRBA.ttf;..\..\font\VeniteAdoremusStraight-Yzo6v.ttf"
+          DestinationFolder="$(PublishDir)font"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

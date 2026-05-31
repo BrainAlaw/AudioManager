@@ -25,7 +25,10 @@ public sealed class ChannelStripViewModel : ObservableObject
     private const float PeakReleaseFactor = 0.14f;
     private const float PeakSnapThreshold = 0.0025f;
 
-    public ChannelStripViewModel(AudioChannelState state, IEnumerable<EndpointOptionViewModel> endpointOptions)
+    public ChannelStripViewModel(
+        AudioChannelState state,
+        IEnumerable<EndpointOptionViewModel> endpointOptions,
+        AudioChannelConfig config)
     {
         Id = state.Id;
         Name = state.Name;
@@ -75,7 +78,7 @@ public sealed class ChannelStripViewModel : ObservableObject
 
     public bool CanShowAssignedApps => Role == AudioChannelRole.VirtualOutput;
 
-    public bool CanShowEqualizerPlaceholder => Role is AudioChannelRole.Microphone or AudioChannelRole.Master;
+    public bool CanShowEndpointName => Role is AudioChannelRole.Microphone or AudioChannelRole.Master;
 
     public bool HasAssignedApps => AssignedProcessIcons.Count > 0;
 
@@ -92,6 +95,8 @@ public sealed class ChannelStripViewModel : ObservableObject
     public string? IconPath { get; private set; }
 
     public string EndpointName { get; private set; }
+
+    public string SpacedEndpointName => ApplyDisplaySpacing(EndpointName);
 
     public ObservableCollection<AssignedProcessIconViewModel> AssignedProcessIcons { get; } = [];
 
@@ -248,6 +253,7 @@ public sealed class ChannelStripViewModel : ObservableObject
         OnPropertyChanged(nameof(PendingName));
         OnPropertyChanged(nameof(IconPath));
         OnPropertyChanged(nameof(EndpointName));
+        OnPropertyChanged(nameof(SpacedEndpointName));
         OnPropertyChanged(nameof(SelectedEndpointId));
         OnPropertyChanged(nameof(DisplayPeakValue));
         OnPropertyChanged(nameof(HasAssignedApps));
@@ -317,9 +323,7 @@ public sealed class ChannelStripViewModel : ObservableObject
         }
 
         var name = state.Endpoint?.FriendlyName ?? "Endpoint missing";
-        return state.LocksEndpoint
-            ? $"Windows default: {name}"
-            : name;
+        return name;
     }
 
     private static string ApplyDisplaySpacing(string value) =>

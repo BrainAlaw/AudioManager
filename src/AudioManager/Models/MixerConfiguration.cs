@@ -14,6 +14,8 @@ public sealed class MixerConfiguration
 
     public bool AudioDiagnosticsEnabled { get; set; }
 
+    public bool NotificationsEnabled { get; set; } = true;
+
     public string? SelectedMidiDeviceId { get; set; }
 
     public bool MidiAutoConnect { get; set; }

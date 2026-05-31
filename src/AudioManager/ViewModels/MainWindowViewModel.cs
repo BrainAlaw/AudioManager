@@ -41,6 +41,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _closeToTray;
     private bool _startInTray;
     private bool _runOnStartup;
+    private bool _notificationsEnabled = true;
     private bool _isMidiConnected;
     private ViewType _currentViewType = ViewType.Mixer;
     private string? _manualBindingChannelId;
@@ -101,6 +102,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public ICommand ToggleRunOnStartupCommand { get; }
 
+    public ICommand ToggleNotificationsEnabledCommand { get; }
+
     public ICommand ResetAssignmentsCommand { get; }
 
     public ICommand LearnVolumeCommand { get; }
@@ -149,6 +152,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ToggleCloseToTrayCommand = new RelayCommand(async _ => await SaveTraySettingsAsync());
         ToggleStartInTrayCommand = new RelayCommand(async _ => await SaveTraySettingsAsync());
         ToggleRunOnStartupCommand = new RelayCommand(async _ => await SaveRunOnStartupAsync());
+        ToggleNotificationsEnabledCommand = new RelayCommand(async _ => await SaveNotificationSettingsAsync());
         ResetAssignmentsCommand = new RelayCommand(async _ => await ResetAssignmentsAsync());
         LearnVolumeCommand = new RelayCommand(parameter => BeginMidiLearn(parameter, MixerCommandKind.VolumeDelta));
         LearnMuteCommand = new RelayCommand(parameter => BeginMidiLearn(parameter, MixerCommandKind.ToggleMute));
@@ -205,6 +209,12 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _runOnStartup;
         set => SetProperty(ref _runOnStartup, value);
+    }
+
+    public bool NotificationsEnabled
+    {
+        get => _notificationsEnabled;
+        set => SetProperty(ref _notificationsEnabled, value);
     }
 
     public string AppVersion =>
@@ -274,6 +284,7 @@ public sealed class MainWindowViewModel : ObservableObject
         CloseToTray = _configuration.CloseToTray;
         StartInTray = _configuration.StartInTray;
         RunOnStartup = _configuration.RunOnStartup;
+        NotificationsEnabled = _configuration.NotificationsEnabled;
         _configuration.MidiAutoConnect = true;
         await _audioManager.InitializeAsync(_configuration);
 
@@ -291,7 +302,16 @@ public sealed class MainWindowViewModel : ObservableObject
             var endpointOptions = endpointPool.Select(endpoint =>
                 new EndpointOptionViewModel(endpoint.Id, endpoint.FriendlyName, endpoint.Kind));
 
-            var channelViewModel = new ChannelStripViewModel(channel, endpointOptions);
+            var configChannel = _configuration.Channels.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, channel.Id, StringComparison.OrdinalIgnoreCase))
+                ?? new AudioChannelConfig
+                {
+                    Id = channel.Id,
+                    Name = channel.Name,
+                    Role = channel.Role
+                };
+
+            var channelViewModel = new ChannelStripViewModel(channel, endpointOptions, configChannel);
             channelViewModel.EndpointChangeRequested += OnEndpointChangeRequested;
             channelViewModel.VolumeChangeRequested += OnVolumeChangeRequested;
             channelViewModel.MuteChangeRequested += OnMuteChangeRequested;
@@ -335,7 +355,6 @@ public sealed class MainWindowViewModel : ObservableObject
         _configurationSaveCts?.Dispose();
         _configurationSaveCts = null;
 
-        _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, 5);
         _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, 6);
         await _settingsService.SaveAsync(_configuration);
     }
@@ -411,7 +430,7 @@ public sealed class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _configuration.SchemaVersion = 5;
+        _configuration.SchemaVersion = 6;
         await _settingsService.SaveAsync(_configuration);
     }
 
@@ -565,6 +584,18 @@ public sealed class MainWindowViewModel : ObservableObject
         await _startupService.SetEnabledAsync(RunOnStartup);
         await _settingsService.SaveAsync(_configuration);
         Status = RunOnStartup ? "Run on startup enabled." : "Run on startup disabled.";
+    }
+
+    private async Task SaveNotificationSettingsAsync()
+    {
+        _configuration.NotificationsEnabled = NotificationsEnabled;
+        await _settingsService.SaveAsync(_configuration);
+        if (!NotificationsEnabled)
+        {
+            _osdService.Hide();
+        }
+
+        Status = NotificationsEnabled ? "Notifications enabled." : "Notifications disabled.";
     }
 
     private async Task ToggleMidiConnectionAsync()
@@ -990,7 +1021,10 @@ public sealed class MainWindowViewModel : ObservableObject
                 if (channel is not null)
                 {
                     channel.Volume = channelViewModel.Volume;
-                    _osdService.ShowVolumeChange(channel);
+                    if (NotificationsEnabled)
+                    {
+                        _osdService.ShowVolumeChange(channel);
+                    }
                 }
             }
             return;
@@ -1012,7 +1046,10 @@ public sealed class MainWindowViewModel : ObservableObject
             var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
             if (channel is not null)
             {
-                _osdService.ShowMuteChange(channel);
+                if (NotificationsEnabled)
+                {
+                    _osdService.ShowMuteChange(channel);
+                }
             }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
@@ -1058,7 +1095,10 @@ public sealed class MainWindowViewModel : ObservableObject
             var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
             if (channel is not null)
             {
-                _osdService.ShowMuteChange(channel);
+                if (NotificationsEnabled)
+                {
+                    _osdService.ShowMuteChange(channel);
+                }
             }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
@@ -1104,7 +1144,10 @@ public sealed class MainWindowViewModel : ObservableObject
         var channel = _audioManager.Channels.FirstOrDefault(candidate => candidate.Id == binding.ChannelId);
         if (channel is not null)
         {
-            _osdService.ShowVolumeChange(channel);
+            if (NotificationsEnabled)
+            {
+                _osdService.ShowVolumeChange(channel);
+            }
         }
     }
 
@@ -1160,7 +1203,10 @@ public sealed class MainWindowViewModel : ObservableObject
             var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
             if (channel is not null)
             {
-                _osdService.ShowMuteChange(channel);
+                if (NotificationsEnabled)
+                {
+                    _osdService.ShowMuteChange(channel);
+                }
             }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.Name ?? binding.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.IsMuted ?? false;
@@ -1188,7 +1234,10 @@ public sealed class MainWindowViewModel : ObservableObject
                 if (channel is not null)
                 {
                     channel.Volume = channelViewModel.Volume;
-                    _osdService.ShowVolumeChange(channel);
+                    if (NotificationsEnabled)
+                    {
+                        _osdService.ShowVolumeChange(channel);
+                    }
                 }
 
                 var direction = binding.Command == MixerCommandKind.VolumeUp ? "up" : "down";
@@ -1465,7 +1514,15 @@ public sealed class MainWindowViewModel : ObservableObject
             : _pendingMicMuteSource ?? $"Backend ({reason})";
         _pendingMicMuteSource = null;
 
-        _osdService.ShowMuteChange(channel);
+        if (string.Equals(source, "UI mute toggle", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (NotificationsEnabled)
+        {
+            _osdService.ShowMuteChange(channel);
+        }
 
         var message = channel.IsMuted
             ? $"Mic muted [{source}]"

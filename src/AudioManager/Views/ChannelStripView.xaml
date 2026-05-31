@@ -200,13 +200,24 @@
                       Width="112"
                       Height="64"
                       Margin="0,3,0,0"
-                      Visibility="{Binding CanShowEqualizerPlaceholder, Converter={StaticResource BoolToVis}}">
-                    <Button Style="{StaticResource Vm.MuteButton}"
+                      Visibility="{Binding CanShowEndpointName, Converter={StaticResource BoolToVis}}">
+                    <Canvas Width="112"
+                            Height="64"
                             HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Margin="-8,0,0,0">
-                        <TextBlock Text="E&#x2009;Q" FontStyle="Normal" FontWeight="Normal" FontSize="12" />
-                    </Button>
+                            VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SpacedEndpointName}"
+                                   FontSize="8"
+                                   FontStyle="Normal"
+                                   FontWeight="Normal"
+                                   Foreground="{StaticResource Vm.TextBrush}"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="None"
+                                   Width="100"
+                                   Canvas.Left="3"
+                                   Canvas.Top="24"
+                                   ToolTip="{Binding EndpointName}" />
+                    </Canvas>
                 </Grid>
 
                 <!-- Assigned Process Icons -->

@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          .\scripts\build-release.ps1 -Version $version
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          gh release create "${env:GITHUB_REF_NAME}" `
+            "artifacts\installer\AudioManager-Setup-$version.exe" `
+            "artifacts\AudioManager-$version-win-x64.zip" `
+            --title "Audio Manager $version" `
+            --notes "Release $version"

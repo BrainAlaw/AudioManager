@@ -92,6 +92,17 @@
                                           VerticalAlignment="Center" />
                             </DockPanel>
                         </Border>
+
+                        <Border Style="{StaticResource Vm.SettingsField}">
+                            <DockPanel>
+                                <TextBlock Text="N&#x2009;o&#x2009;t&#x2009;i&#x2009;f&#x2009;i&#x2009;c&#x2009;a&#x2009;t&#x2009;i&#x2009;o&#x2009;n&#x2009;s&#x2009; &#x2009;e&#x2009;n&#x2009;a&#x2009;b&#x2009;l&#x2009;e&#x2009;d" VerticalAlignment="Center" Foreground="{StaticResource Vm.TextBrush}" />
+                                <CheckBox IsChecked="{Binding NotificationsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          Command="{Binding ToggleNotificationsEnabledCommand}"
+                                          Style="{StaticResource Vm.SettingsCheckBox}"
+                                          HorizontalAlignment="Right"
+                                          VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 

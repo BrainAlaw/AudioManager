@@ -1,7 +1,10 @@
 bin/
 obj/
+artifacts/
 .vscode/
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+*_wpftmp.csproj
+*_wpftmp.csproj.*
