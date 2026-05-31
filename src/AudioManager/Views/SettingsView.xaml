@@ -409,10 +409,10 @@
                     <StackPanel>
                         <Border Style="{StaticResource Vm.SettingsField}">
                             <StackPanel>
-                                <TextBlock Text="A&#x2009;u&#x2009;d&#x2009;i&#x2009;o&#x2009; &#x2009;M&#x2009;a&#x2009;n&#x2009;a&#x2009;g&#x2009;e&#x2009;r"
-                                           FontSize="18"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock FontSize="18" FontWeight="SemiBold">
+                                    <Run Text="A&#x2009;u&#x2009;d&#x2009;i&#x2009;o&#x2009; " Foreground="{StaticResource Vm.TextBrush}" />
+                                    <Run Text="M&#x2009;a&#x2009;n&#x2009;a&#x2009;g&#x2009;e&#x2009;r" Foreground="#D84C4C" />
+                                </TextBlock>
                                 <TextBlock Text="{Binding AppVersion}" Margin="0,6,0,0" Foreground="{StaticResource Vm.MutedTextBrush}" />
                                 <TextBlock Text="Windows desktop audio mixer controlled by MIDI and keyboard hotkeys." Margin="0,10,0,0" Foreground="{StaticResource Vm.TextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
