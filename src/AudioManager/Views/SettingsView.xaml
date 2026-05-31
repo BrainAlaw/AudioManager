@@ -409,7 +409,10 @@
                     <StackPanel>
                         <Border Style="{StaticResource Vm.SettingsField}">
                             <StackPanel>
-                                <TextBlock Text="Audio Manager" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Text="A&#x2009;u&#x2009;d&#x2009;i&#x2009;o&#x2009; &#x2009;M&#x2009;a&#x2009;n&#x2009;a&#x2009;g&#x2009;e&#x2009;r"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource Vm.TextBrush}" />
                                 <TextBlock Text="{Binding AppVersion}" Margin="0,6,0,0" Foreground="{StaticResource Vm.MutedTextBrush}" />
                                 <TextBlock Text="Windows desktop audio mixer controlled by MIDI and keyboard hotkeys." Margin="0,10,0,0" Foreground="{StaticResource Vm.TextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
@@ -417,14 +420,24 @@
 
                         <Border Style="{StaticResource Vm.SettingsField}">
                             <StackPanel>
-                                <TextBlock Text="Repository" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
-                                <TextBlock Text="{Binding RepositoryUrl}" Margin="0,6,0,0" Foreground="{StaticResource Vm.AccentBrush}" TextWrapping="Wrap" />
+                                <TextBlock Text="R&#x2009;e&#x2009;p&#x2009;o&#x2009;s&#x2009;i&#x2009;t&#x2009;o&#x2009;r&#x2009;y"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
+                                    <Hyperlink NavigateUri="{Binding RepositoryUrl}" RequestNavigate="RepositoryLink_RequestNavigate">
+                                        <TextBlock Text="{Binding RepositoryUrl}" Foreground="{StaticResource Vm.AccentBrush}" />
+                                    </Hyperlink>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
 
                         <Border Style="{StaticResource Vm.SettingsField}">
                             <StackPanel>
-                                <TextBlock Text="Credits and license" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Text="C&#x2009;r&#x2009;e&#x2009;d&#x2009;i&#x2009;t&#x2009;s&#x2009; &#x2009;a&#x2009;n&#x2009;d&#x2009; &#x2009;l&#x2009;i&#x2009;c&#x2009;e&#x2009;n&#x2009;s&#x2009;e"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource Vm.TextBrush}" />
                                 <TextBlock Text="{Binding CreditsText}" Margin="0,6,0,0" Foreground="{StaticResource Vm.MutedTextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
