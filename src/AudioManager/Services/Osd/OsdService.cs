@@ -39,6 +39,24 @@ public sealed class OsdService : IOsdService
         _hideTimer.Start();
     }
 
+    public void ShowMuteChange(AudioChannelState channel)
+    {
+        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        {
+            WpfApplication.Current.Dispatcher.Invoke(() => ShowMuteChange(channel));
+            return;
+        }
+
+        _window ??= new OsdWindow();
+        _window.Update(channel, isMuted: true);
+        _window.ShowActivated = false;
+        _window.Show();
+        _window.FadeIn();
+
+        _hideTimer.Stop();
+        _hideTimer.Start();
+    }
+
     public void Hide()
     {
         if (!WpfApplication.Current.Dispatcher.CheckAccess())

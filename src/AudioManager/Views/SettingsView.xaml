@@ -81,6 +81,17 @@
                                           VerticalAlignment="Center" />
                             </DockPanel>
                         </Border>
+
+                        <Border Style="{StaticResource Vm.SettingsField}">
+                            <DockPanel>
+                                <TextBlock Text="R&#x2009;u&#x2009;n&#x2009; &#x2009;o&#x2009;n&#x2009; &#x2009;s&#x2009;t&#x2009;a&#x2009;r&#x2009;t&#x2009;u&#x2009;p" VerticalAlignment="Center" Foreground="{StaticResource Vm.TextBrush}" />
+                                <CheckBox IsChecked="{Binding RunOnStartup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          Command="{Binding ToggleRunOnStartupCommand}"
+                                          Style="{StaticResource Vm.SettingsCheckBox}"
+                                          HorizontalAlignment="Right"
+                                          VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -390,6 +401,36 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+        </TabItem>
+
+        <TabItem Header="A&#x2009;b&#x2009;o&#x2009;u&#x2009;t">
+            <Grid Margin="16,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Style="{StaticResource Vm.SettingsField}">
+                            <StackPanel>
+                                <TextBlock Text="Audio Manager" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Text="{Binding AppVersion}" Margin="0,6,0,0" Foreground="{StaticResource Vm.MutedTextBrush}" />
+                                <TextBlock Text="Windows desktop audio mixer controlled by MIDI and keyboard hotkeys." Margin="0,10,0,0" Foreground="{StaticResource Vm.TextBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Vm.SettingsField}">
+                            <StackPanel>
+                                <TextBlock Text="Repository" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Text="{Binding RepositoryUrl}" Margin="0,6,0,0" Foreground="{StaticResource Vm.AccentBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Vm.SettingsField}">
+                            <StackPanel>
+                                <TextBlock Text="Credits and license" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Vm.TextBrush}" />
+                                <TextBlock Text="{Binding CreditsText}" Margin="0,6,0,0" Foreground="{StaticResource Vm.MutedTextBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </TabItem>
     </TabControl>
 </UserControl>

@@ -8,6 +8,7 @@ using AudioManager.Services.Input;
 using AudioManager.Services.Midi;
 using AudioManager.Services.Osd;
 using AudioManager.Services.Settings;
+using AudioManager.Services.Startup;
 using AudioManager.ViewModels;
 using AudioManager.Views;
 
@@ -29,6 +30,7 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IMidiListenerService, MidiListenerService>();
         services.AddSingleton<IKeyboardHookService, KeyboardHookService>();
         services.AddSingleton<IOsdService, OsdService>();
+        services.AddSingleton<IStartupService, RegistryStartupService>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<MainWindow>();
 
@@ -40,7 +42,7 @@ public partial class App : System.Windows.Application
         MainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         MainWindow.Show();
 
-        if (viewModel.StartInTray && MainWindow is Views.MainWindow mainWindow)
+        if ((viewModel.StartInTray || viewModel.RunOnStartup) && MainWindow is Views.MainWindow mainWindow)
         {
             mainWindow.HideToTray();
         }

@@ -10,5 +10,7 @@ public interface IOsdService
     /// </summary>
     void ShowVolumeChange(AudioChannelState channel);
 
+    void ShowMuteChange(AudioChannelState channel);
+
     void Hide();
 }

@@ -17,15 +17,15 @@ public partial class OsdWindow : Window
     {
         InitializeComponent();
         Loaded += (_, _) => ApplyClickThroughStyles();
-        Left = SystemParameters.PrimaryScreenWidth - Width - 48;
-        Top = 72;
+        Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
+        Top = SystemParameters.PrimaryScreenHeight - Height - 72;
     }
 
-    public void Update(AudioChannelState channel)
+    public void Update(AudioChannelState channel, bool isMuted = false)
     {
         ChannelName.Text = channel.Name;
         var percent = (int)MathF.Round(channel.Volume * 100);
-        VolumePercent.Text = $"{percent}%";
+        VolumePercent.Text = isMuted ? (channel.IsMuted ? "Muted" : "Unmuted") : $"{percent}%";
         VolumeBar.Value = percent;
         IconText.Text = channel.Name.Length >= 2 ? channel.Name[..2].ToUpperInvariant() : channel.Name.ToUpperInvariant();
     }

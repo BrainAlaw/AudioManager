@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows;
+using System.Reflection;
 using AudioManager.Contracts;
 using AudioManager.Models;
 using AudioManager.Services;
 using AudioManager.Services.Midi;
+using AudioManager.Services.Startup;
 using WpfApplication = System.Windows.Application;
 
 namespace AudioManager.ViewModels;
@@ -26,6 +28,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly IMidiListenerService _midiListener;
     private readonly IKeyboardHookService _keyboardHook;
     private readonly IOsdService _osdService;
+    private readonly IStartupService _startupService;
     private readonly Dictionary<string, DateTimeOffset> _lastCcMuteToggleAt = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, DateTimeOffset> _lastKeyboardMuteToggleAt = [];
     private readonly Dictionary<string, CancellationTokenSource> _volumeApplyCtsByChannel = new(StringComparer.OrdinalIgnoreCase);
@@ -37,6 +40,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _minimizeToTray;
     private bool _closeToTray;
     private bool _startInTray;
+    private bool _runOnStartup;
     private bool _isMidiConnected;
     private ViewType _currentViewType = ViewType.Mixer;
     private string? _manualBindingChannelId;
@@ -95,6 +99,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public ICommand ToggleStartInTrayCommand { get; }
 
+    public ICommand ToggleRunOnStartupCommand { get; }
+
     public ICommand ResetAssignmentsCommand { get; }
 
     public ICommand LearnVolumeCommand { get; }
@@ -116,13 +122,15 @@ public sealed class MainWindowViewModel : ObservableObject
         ICoreAudioManager audioManager,
         IMidiListenerService midiListener,
         IKeyboardHookService keyboardHook,
-        IOsdService osdService)
+        IOsdService osdService,
+        IStartupService startupService)
     {
         _settingsService = settingsService;
         _audioManager = audioManager;
         _midiListener = midiListener;
         _keyboardHook = keyboardHook;
         _osdService = osdService;
+        _startupService = startupService;
 
         _audioManager.ChannelChanged += OnAudioChannelChanged;
         _audioManager.ActiveSessionsChanged += OnActiveSessionsChanged;
@@ -140,6 +148,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ToggleMinimizeToTrayCommand = new RelayCommand(async _ => await SaveTraySettingsAsync());
         ToggleCloseToTrayCommand = new RelayCommand(async _ => await SaveTraySettingsAsync());
         ToggleStartInTrayCommand = new RelayCommand(async _ => await SaveTraySettingsAsync());
+        ToggleRunOnStartupCommand = new RelayCommand(async _ => await SaveRunOnStartupAsync());
         ResetAssignmentsCommand = new RelayCommand(async _ => await ResetAssignmentsAsync());
         LearnVolumeCommand = new RelayCommand(parameter => BeginMidiLearn(parameter, MixerCommandKind.VolumeDelta));
         LearnMuteCommand = new RelayCommand(parameter => BeginMidiLearn(parameter, MixerCommandKind.ToggleMute));
@@ -191,6 +200,20 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _startInTray;
         set => SetProperty(ref _startInTray, value);
     }
+
+    public bool RunOnStartup
+    {
+        get => _runOnStartup;
+        set => SetProperty(ref _runOnStartup, value);
+    }
+
+    public string AppVersion =>
+        $"Version {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown"}";
+
+    public string RepositoryUrl => "https://github.com/BrainAlaw/AudioManager";
+
+    public string CreditsText =>
+        "Built with .NET 8, WPF, NAudio, and Microsoft.Extensions.DependencyInjection.";
 
     public ViewType CurrentViewType
     {
@@ -250,6 +273,7 @@ public sealed class MainWindowViewModel : ObservableObject
         MinimizeToTray = _configuration.MinimizeToTray;
         CloseToTray = _configuration.CloseToTray;
         StartInTray = _configuration.StartInTray;
+        RunOnStartup = _configuration.RunOnStartup;
         _configuration.MidiAutoConnect = true;
         await _audioManager.InitializeAsync(_configuration);
 
@@ -312,6 +336,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _configurationSaveCts = null;
 
         _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, 5);
+        _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, 6);
         await _settingsService.SaveAsync(_configuration);
     }
 
@@ -532,6 +557,14 @@ public sealed class MainWindowViewModel : ObservableObject
         _configuration.StartInTray = StartInTray;
         await _settingsService.SaveAsync(_configuration);
         Status = $"Tray behavior updated. Minimize: {(MinimizeToTray ? "tray" : "taskbar")}, Close: {(CloseToTray ? "tray" : "exit")}.";
+    }
+
+    private async Task SaveRunOnStartupAsync()
+    {
+        _configuration.RunOnStartup = RunOnStartup;
+        await _startupService.SetEnabledAsync(RunOnStartup);
+        await _settingsService.SaveAsync(_configuration);
+        Status = RunOnStartup ? "Run on startup enabled." : "Run on startup disabled.";
     }
 
     private async Task ToggleMidiConnectionAsync()

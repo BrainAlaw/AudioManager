@@ -2,7 +2,7 @@ namespace AudioManager.Models;
 
 public sealed class MixerConfiguration
 {
-    public int SchemaVersion { get; set; } = 5;
+    public int SchemaVersion { get; set; } = 6;
 
     public bool RunOnStartup { get; set; }
 
