@@ -2,6 +2,7 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:converters="clr-namespace:AudioManager.Converters">
     <converters:ProgressHeightConverter x:Key="Vm.ProgressHeightConverter" />
+    <converters:ProgressWidthConverter x:Key="Vm.ProgressWidthConverter" />
 
     <!-- Modern Dark Theme Palette -->
     <Color x:Key="Vm.Background">#121212</Color>
@@ -697,6 +698,76 @@
         <Setter Property="Foreground" Value="{StaticResource Vm.AccentBrush}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <Style x:Key="Vm.OsdVolumeSlider" TargetType="Slider">
+        <Setter Property="Foreground" Value="{StaticResource Vm.AccentBrush}" />
+        <Setter Property="Background" Value="{StaticResource Vm.MeterTrackBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="24" SnapsToDevicePixels="True">
+                        <Border Height="4"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="2"
+                                VerticalAlignment="Center" />
+                        <Track x:Name="PART_Track" VerticalAlignment="Center">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="{x:Static Slider.DecreaseLarge}"
+                                              Style="{StaticResource Vm.SliderDecreaseButton}"
+                                              Background="{TemplateBinding Foreground}"
+                                              Height="4"
+                                              HorizontalAlignment="Left" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="{x:Static Slider.IncreaseLarge}"
+                                              Style="{StaticResource Vm.SliderIncreaseButton}"
+                                              Background="Transparent"
+                                              Height="4"
+                                              HorizontalAlignment="Left" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource Vm.SliderThumb}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Vm.OsdHorizontalProgressBar" TargetType="ProgressBar">
+        <Setter Property="Foreground" Value="{StaticResource Vm.AccentBrush}" />
+        <Setter Property="Background" Value="{StaticResource Vm.MeterTrackBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid Height="14" SnapsToDevicePixels="True">
+                        <Border Height="8"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                VerticalAlignment="Center"
+                                ClipToBounds="True" />
+                        <Border Height="8"
+                                Background="{TemplateBinding Foreground}"
+                                CornerRadius="4"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left">
+                            <Border.Width>
+                                <MultiBinding Converter="{StaticResource Vm.ProgressWidthConverter}">
+                                    <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="ActualWidth" />
+                                    <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="Value" />
+                                </MultiBinding>
+                            </Border.Width>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Horizontal Peak Progress Bar for App Cards -->

@@ -30,10 +30,7 @@ public sealed class OsdService : IOsdService
         }
 
         _window ??= new OsdWindow();
-        _window.Update(channel);
-        _window.ShowActivated = false;
-        _window.Show();
-        _window.FadeIn();
+        _window.ShowOrUpdate(channel);
 
         _hideTimer.Stop();
         _hideTimer.Start();
@@ -48,10 +45,7 @@ public sealed class OsdService : IOsdService
         }
 
         _window ??= new OsdWindow();
-        _window.Update(channel, isMuted: true);
-        _window.ShowActivated = false;
-        _window.Show();
-        _window.FadeIn();
+        _window.ShowOrUpdate(channel, isMuted: true);
 
         _hideTimer.Stop();
         _hideTimer.Start();

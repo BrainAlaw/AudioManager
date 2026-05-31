@@ -957,6 +957,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
         if (e.Command is null)
         {
+            if (e.Delta == 0 && IsVolumeDeltaBinding(e.Identity))
+            {
+                ShowCurrentChannelVolume(e.Identity);
+            }
+
             return;
         }
 
@@ -1004,6 +1009,11 @@ public sealed class MainWindowViewModel : ObservableObject
                 $"MIDI CC {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}");
             await _audioManager.ToggleChannelMuteAsync(e.Command.ChannelId);
             SyncMuteToConfiguration(e.Command.ChannelId);
+            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
+            if (channel is not null)
+            {
+                _osdService.ShowMuteChange(channel);
+            }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
             Status = muted ? $"{channelName} muted (MIDI)." : $"{channelName} unmuted (MIDI).";
@@ -1045,6 +1055,11 @@ public sealed class MainWindowViewModel : ObservableObject
                 $"MIDI note {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}");
             await _audioManager.ToggleChannelMuteAsync(e.Command.ChannelId);
             SyncMuteToConfiguration(e.Command.ChannelId);
+            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
+            if (channel is not null)
+            {
+                _osdService.ShowMuteChange(channel);
+            }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
             Status = muted ? $"{channelName} muted (MIDI note)." : $"{channelName} unmuted (MIDI note).";
@@ -1064,6 +1079,33 @@ public sealed class MainWindowViewModel : ObservableObject
 
         _lastCcMuteToggleAt[key] = now;
         return true;
+    }
+
+    private bool IsVolumeDeltaBinding(MidiMessageIdentity identity) =>
+        _configuration.MidiBindings.Any(binding =>
+            binding.Kind == identity.Kind &&
+            binding.MidiChannel == identity.MidiChannel &&
+            binding.ControllerOrNote == identity.ControllerOrNote &&
+            binding.Command == MixerCommandKind.VolumeDelta);
+
+    private void ShowCurrentChannelVolume(MidiMessageIdentity identity)
+    {
+        var binding = _configuration.MidiBindings.FirstOrDefault(candidate =>
+            candidate.Kind == identity.Kind &&
+            candidate.MidiChannel == identity.MidiChannel &&
+            candidate.ControllerOrNote == identity.ControllerOrNote &&
+            candidate.Command == MixerCommandKind.VolumeDelta);
+
+        if (binding is null)
+        {
+            return;
+        }
+
+        var channel = _audioManager.Channels.FirstOrDefault(candidate => candidate.Id == binding.ChannelId);
+        if (channel is not null)
+        {
+            _osdService.ShowVolumeChange(channel);
+        }
     }
 
     private bool ShouldIgnoreStartupMuteInput() => DateTimeOffset.UtcNow < _ignoreMuteInputUntil;
@@ -1115,6 +1157,11 @@ public sealed class MainWindowViewModel : ObservableObject
             RememberMicMuteSource(binding.ChannelId, $"Keyboard {e.KeyName}");
             await _audioManager.ToggleChannelMuteAsync(binding.ChannelId);
             SyncMuteToConfiguration(binding.ChannelId);
+            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
+            if (channel is not null)
+            {
+                _osdService.ShowMuteChange(channel);
+            }
             var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.Name ?? binding.ChannelId;
             var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.IsMuted ?? false;
             Status = muted ? $"{channelName} muted ({e.KeyName})." : $"{channelName} unmuted ({e.KeyName}).";
@@ -1417,6 +1464,8 @@ public sealed class MainWindowViewModel : ObservableObject
             ? "External endpoint state"
             : _pendingMicMuteSource ?? $"Backend ({reason})";
         _pendingMicMuteSource = null;
+
+        _osdService.ShowMuteChange(channel);
 
         var message = channel.IsMuted
             ? $"Mic muted [{source}]"
