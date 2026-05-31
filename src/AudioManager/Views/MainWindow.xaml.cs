@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Windows;
@@ -19,12 +20,12 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.SetShellVisible(true);
-        Icon = LoadWindowIcon();
+        this.Icon = LoadWindowIcon();
 
         _notifyIcon = new NotifyIcon
         {
             Text = "Audio Manager",
-            Icon = SystemIcons.Application,
+            Icon = LoadTrayIcon(),
             Visible = false,
             ContextMenuStrip = BuildTrayMenu()
         };
@@ -155,5 +156,20 @@ public partial class MainWindow : Window
         image.EndInit();
         image.Freeze();
         return image;
+    }
+
+    private static System.Drawing.Icon LoadTrayIcon()
+    {
+        var processPath = Process.GetCurrentProcess().MainModule?.FileName;
+        if (!string.IsNullOrWhiteSpace(processPath))
+        {
+            var associatedIcon = System.Drawing.Icon.ExtractAssociatedIcon(processPath);
+            if (associatedIcon is not null)
+            {
+                return (System.Drawing.Icon)associatedIcon.Clone();
+            }
+        }
+
+        return System.Drawing.SystemIcons.Application;
     }
 }
