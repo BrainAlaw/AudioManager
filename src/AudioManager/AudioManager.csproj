@@ -8,6 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AudioManager</AssemblyName>
     <RootNamespace>AudioManager</RootNamespace>
+    <ApplicationIcon>Resources\Icons\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,7 @@
     <Resource Include="..\..\font\VeniteAdoremus-rgRBA.ttf" />
     <Resource Include="..\..\font\VeniteAdoremusStraight-Yzo6v.ttf" />
     <Resource Include="..\..\assets\header_logo.png" />
+    <Resource Include="Resources\Icons\app.ico" />
   </ItemGroup>
 
   <Target Name="CopyFontAssets" AfterTargets="Build">

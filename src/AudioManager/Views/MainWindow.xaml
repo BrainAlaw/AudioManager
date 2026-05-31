@@ -9,6 +9,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Audio Manager"
+        Icon="/Resources/Icons/app.ico"
         Width="1180"
         Height="720"
         MinWidth="1180"
