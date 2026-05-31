@@ -180,10 +180,10 @@ src/
 
 ```powershell
 # Build
-dotnet build src\VirtualMixer\AudioManager.csproj
+dotnet build src\AudioManager\AudioManager.csproj
 
 # Run the mixer
-dotnet run --project src\VirtualMixer\AudioManager.csproj
+dotnet run --project src\AudioManager\AudioManager.csproj
 ```
 
 ## Usage Workflow
