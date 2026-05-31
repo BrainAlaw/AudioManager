@@ -1,4 +1,4 @@
-namespace VirtualMixer.Models;
+namespace AudioManager.Models;
 
 public sealed class MixerConfiguration
 {

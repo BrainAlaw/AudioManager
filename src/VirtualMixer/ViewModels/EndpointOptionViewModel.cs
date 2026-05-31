@@ -1,5 +1,5 @@
-using VirtualMixer.Models;
+using AudioManager.Models;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed record EndpointOptionViewModel(string Id, string Name, AudioEndpointKind Kind);

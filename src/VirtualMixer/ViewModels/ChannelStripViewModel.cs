@@ -3,10 +3,10 @@ using System.Windows.Input;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
-using VirtualMixer.Models;
-using VirtualMixer.Services;
+using AudioManager.Models;
+using AudioManager.Services;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed class ChannelStripViewModel : ObservableObject
 {

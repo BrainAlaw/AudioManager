@@ -1,4 +1,4 @@
-# VirtualMixer
+# AudioManager
 
 Windows desktop software audio mixer controlled via **MIDI** (Loupedeck) and **keyboard hotkeys**. Groups active Windows audio sessions by application process into logical mixer channels.
 
@@ -12,7 +12,7 @@ Windows desktop software audio mixer controlled via **MIDI** (Loupedeck) and **k
 | Audio API | WASAPI via NAudio 2.2.1 |
 | MIDI | NAudio.Midi |
 | DI | Microsoft.Extensions.DependencyInjection 8.0.1 |
-| Config | JSON via System.Text.Json (`%APPDATA%\VirtualMixer\settings.json`) |
+| Config | JSON via System.Text.Json (`%APPDATA%\AudioManager\settings.json`) |
 | Platform | Windows (x64) |
 
 ## Views
@@ -91,7 +91,7 @@ Channels are classified by `AudioChannelRole`:
 
 ### Configuration (`MixerConfiguration`)
 
-Persisted to `%APPDATA%\VirtualMixer\settings.json` (schema v6):
+Persisted to `%APPDATA%\AudioManager\settings.json` (schema v6):
 
 ```json
 {
@@ -114,9 +114,9 @@ Persisted to `%APPDATA%\VirtualMixer\settings.json` (schema v6):
 
 ```
 src/
-│   ├── VirtualMixer/
+│   ├── AudioManager/
 │   │   ├── App.xaml / App.xaml.cs        # DI setup, startup
-│   │   ├── VirtualMixer.csproj           # net8.0-windows
+│   │   ├── AudioManager.csproj           # net8.0-windows
 │   │   ├── Contracts/                    # Service interfaces
 │   │   │   ├── ICoreAudioManager.cs
 │   │   │   ├── IMidiListenerService.cs
@@ -180,10 +180,10 @@ src/
 
 ```powershell
 # Build
-dotnet build src\VirtualMixer\VirtualMixer.csproj
+dotnet build src\VirtualMixer\AudioManager.csproj
 
 # Run the mixer
-dotnet run --project src\VirtualMixer\VirtualMixer.csproj
+dotnet run --project src\VirtualMixer\AudioManager.csproj
 ```
 
 ## Usage Workflow
@@ -198,7 +198,7 @@ dotnet run --project src\VirtualMixer\VirtualMixer.csproj
 ## Known Limitations
 
 - Group control requires an active audio session per process at least once (icons are cached afterwards).
-- Some apps spawn multiple sessions across endpoints — VirtualMixer consolidates by process, prefers highest-peak endpoint.
+- Some apps spawn multiple sessions across endpoints — AudioManager consolidates by process, prefers highest-peak endpoint.
 - Per-app output device switching not implemented.
 - Virtual audio cables are not required but device names appear in session metadata.
 - `IsEndpointSelectorVisible` is hardcoded `false` — endpoint ComboBox is hidden.
@@ -218,7 +218,7 @@ Add an ABOUT section to the Settings view displaying:
 
 ### 3. App Icon from Assets
 
-Add `icon.png` (or `.ico`) from `assets/` as the application icon for the compiled `VirtualMixer.exe` — visible in the taskbar, title bar, and file explorer.
+Add `icon.png` (or `.ico`) from `assets/` as the application icon for the compiled `AudioManager.exe` — visible in the taskbar, title bar, and file explorer.
 
 ### 4. OSD Popups for Volume and Mute
 
@@ -234,4 +234,3 @@ Prepare a production-ready release:
 - Create an installer (e.g. WiX, Inno Setup, or dotnet publish with self-contained deploy) targeting `Program Files`
 - Set up GitHub repository with a proper README, license, contribution guide
 - Create a GitHub release with the installer binary and changelog
-

@@ -1,9 +1,9 @@
 using System.Linq;
 using System.Windows.Media;
-using VirtualMixer.Models;
-using VirtualMixer.Services;
+using AudioManager.Models;
+using AudioManager.Services;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed class ActiveAudioAppViewModel : ObservableObject
 {

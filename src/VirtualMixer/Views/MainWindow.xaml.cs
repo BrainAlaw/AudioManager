@@ -3,9 +3,9 @@ using System.Drawing;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Forms;
-using VirtualMixer.ViewModels;
+using AudioManager.ViewModels;
 
-namespace VirtualMixer.Views;
+namespace AudioManager.Views;
 
 public partial class MainWindow : Window
 {
@@ -20,7 +20,7 @@ public partial class MainWindow : Window
 
         _notifyIcon = new NotifyIcon
         {
-            Text = "VirtualMixer",
+            Text = "Audio Manager",
             Icon = SystemIcons.Application,
             Visible = false,
             ContextMenuStrip = BuildTrayMenu()

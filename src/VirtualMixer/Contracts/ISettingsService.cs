@@ -1,6 +1,6 @@
-using VirtualMixer.Models;
+using AudioManager.Models;
 
-namespace VirtualMixer.Contracts;
+namespace AudioManager.Contracts;
 
 public interface ISettingsService
 {

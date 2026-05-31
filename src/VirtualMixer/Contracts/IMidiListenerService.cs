@@ -1,6 +1,6 @@
-using VirtualMixer.Models;
+using AudioManager.Models;
 
-namespace VirtualMixer.Contracts;
+namespace AudioManager.Contracts;
 
 /// <summary>
 /// Listens to MIDI input devices and translates raw CC/Note messages into

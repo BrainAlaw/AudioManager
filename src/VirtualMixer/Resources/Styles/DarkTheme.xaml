@@ -1,6 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:converters="clr-namespace:VirtualMixer.Converters">
+                    xmlns:converters="clr-namespace:AudioManager.Converters">
     <converters:ProgressHeightConverter x:Key="Vm.ProgressHeightConverter" />
 
     <!-- Modern Dark Theme Palette -->

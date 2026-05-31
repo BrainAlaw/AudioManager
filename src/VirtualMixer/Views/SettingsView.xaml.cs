@@ -1,6 +1,6 @@
 using WpfUserControl = System.Windows.Controls.UserControl;
 
-namespace VirtualMixer.Views;
+namespace AudioManager.Views;
 
 public partial class SettingsView : WpfUserControl
 {

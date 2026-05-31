@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed class RelayCommand : ICommand
 {

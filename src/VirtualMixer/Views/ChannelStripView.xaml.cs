@@ -4,9 +4,9 @@ using System.Windows.Input;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
-using VirtualMixer.ViewModels;
+using AudioManager.ViewModels;
 
-namespace VirtualMixer.Views;
+namespace AudioManager.Views;
 
 public partial class ChannelStripView : WpfUserControl
 {

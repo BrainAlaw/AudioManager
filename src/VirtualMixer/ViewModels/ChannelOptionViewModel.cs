@@ -1,6 +1,6 @@
 using System.Linq;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed class ChannelOptionViewModel : ObservableObject
 {

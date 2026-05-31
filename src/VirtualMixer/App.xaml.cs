@@ -2,16 +2,16 @@ using System.IO;
 using System.Windows;
 using WpfFontFamily = System.Windows.Media.FontFamily;
 using Microsoft.Extensions.DependencyInjection;
-using VirtualMixer.Contracts;
-using VirtualMixer.Services.Audio;
-using VirtualMixer.Services.Input;
-using VirtualMixer.Services.Midi;
-using VirtualMixer.Services.Osd;
-using VirtualMixer.Services.Settings;
-using VirtualMixer.ViewModels;
-using VirtualMixer.Views;
+using AudioManager.Contracts;
+using AudioManager.Services.Audio;
+using AudioManager.Services.Input;
+using AudioManager.Services.Midi;
+using AudioManager.Services.Osd;
+using AudioManager.Services.Settings;
+using AudioManager.ViewModels;
+using AudioManager.Views;
 
-namespace VirtualMixer;
+namespace AudioManager;
 
 public partial class App : System.Windows.Application
 {

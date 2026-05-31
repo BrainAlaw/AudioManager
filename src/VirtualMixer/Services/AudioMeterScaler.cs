@@ -1,4 +1,4 @@
-namespace VirtualMixer.Services;
+namespace AudioManager.Services;
 
 public static class AudioMeterScaler
 {

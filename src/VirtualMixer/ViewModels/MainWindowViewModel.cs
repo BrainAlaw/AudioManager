@@ -1,13 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
-using VirtualMixer.Services;
-using VirtualMixer.Services.Midi;
+using AudioManager.Contracts;
+using AudioManager.Models;
+using AudioManager.Services;
+using AudioManager.Services.Midi;
 using WpfApplication = System.Windows.Application;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public enum ViewType
 {

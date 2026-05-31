@@ -2,11 +2,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using NAudio.CoreAudioApi;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
-using VirtualMixer.Services;
+using AudioManager.Contracts;
+using AudioManager.Models;
+using AudioManager.Services;
 
-namespace VirtualMixer.Services.Audio;
+namespace AudioManager.Services.Audio;
 
 public sealed class CoreAudioManager : ICoreAudioManager
 {

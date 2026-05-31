@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.Json;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
+using AudioManager.Contracts;
+using AudioManager.Models;
 
-namespace VirtualMixer.Services.Settings;
+namespace AudioManager.Services.Settings;
 
 public sealed class JsonSettingsService : ISettingsService
 {
@@ -20,7 +20,7 @@ public sealed class JsonSettingsService : ISettingsService
     public JsonSettingsService()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        _settingsPath = Path.Combine(appData, "VirtualMixer", "settings.json");
+        _settingsPath = Path.Combine(appData, "AudioManager", "settings.json");
     }
 
     public async Task<MixerConfiguration> LoadAsync(CancellationToken cancellationToken = default)

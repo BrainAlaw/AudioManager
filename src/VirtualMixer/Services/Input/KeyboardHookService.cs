@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
+using AudioManager.Contracts;
+using AudioManager.Models;
 
-namespace VirtualMixer.Services.Input;
+namespace AudioManager.Services.Input;
 
 public sealed class KeyboardHookService : IKeyboardHookService
 {

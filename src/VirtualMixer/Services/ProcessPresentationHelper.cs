@@ -7,7 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace VirtualMixer.Services;
+namespace AudioManager.Services;
 
 public static class ProcessPresentationHelper
 {

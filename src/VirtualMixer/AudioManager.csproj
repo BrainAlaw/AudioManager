@@ -6,8 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <AssemblyName>VirtualMixer</AssemblyName>
-    <RootNamespace>VirtualMixer</RootNamespace>
+    <AssemblyName>AudioManager</AssemblyName>
+    <RootNamespace>AudioManager</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

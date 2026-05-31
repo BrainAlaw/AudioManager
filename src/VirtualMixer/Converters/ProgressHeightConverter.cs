@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 
-namespace VirtualMixer.Converters;
+namespace AudioManager.Converters;
 
 public sealed class ProgressHeightConverter : IMultiValueConverter
 {

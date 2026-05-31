@@ -1,9 +1,9 @@
 using NAudio.Midi;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
+using AudioManager.Contracts;
+using AudioManager.Models;
 using System.Runtime.CompilerServices;
 
-namespace VirtualMixer.Services.Midi;
+namespace AudioManager.Services.Midi;
 
 public sealed class MidiListenerService : IMidiListenerService
 {

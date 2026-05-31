@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Windows.Data;
 using WpfBinding = System.Windows.Data.Binding;
 
-namespace VirtualMixer.Converters;
+namespace AudioManager.Converters;
 
 public sealed class EnumEqualsConverter : IValueConverter
 {

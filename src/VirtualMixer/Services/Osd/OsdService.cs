@@ -1,11 +1,11 @@
 using System.Windows.Threading;
 using System.Windows;
-using VirtualMixer.Contracts;
-using VirtualMixer.Models;
-using VirtualMixer.Views;
+using AudioManager.Contracts;
+using AudioManager.Models;
+using AudioManager.Views;
 using WpfApplication = System.Windows.Application;
 
-namespace VirtualMixer.Services.Osd;
+namespace AudioManager.Services.Osd;
 
 public sealed class OsdService : IOsdService
 {

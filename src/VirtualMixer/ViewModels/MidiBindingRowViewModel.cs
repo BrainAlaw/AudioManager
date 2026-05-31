@@ -1,7 +1,7 @@
 using System.Linq;
-using VirtualMixer.Models;
+using AudioManager.Models;
 
-namespace VirtualMixer.ViewModels;
+namespace AudioManager.ViewModels;
 
 public sealed class MidiBindingRowViewModel : ObservableObject
 {

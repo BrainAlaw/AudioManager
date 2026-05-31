@@ -2,7 +2,7 @@ using System.Threading;
 using NAudio;
 using NAudio.Midi;
 
-namespace VirtualMixer.Services.Midi;
+namespace AudioManager.Services.Midi;
 
 /// <summary>
 /// Dedicated MIDI controller service for a six-channel mixer controlled by a

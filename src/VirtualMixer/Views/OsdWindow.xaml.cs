@@ -2,9 +2,9 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
-using VirtualMixer.Models;
+using AudioManager.Models;
 
-namespace VirtualMixer.Views;
+namespace AudioManager.Views;
 
 public partial class OsdWindow : Window
 {
