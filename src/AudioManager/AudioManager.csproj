@@ -27,6 +27,7 @@
     <Resource Include="..\..\font\VeniteAdoremusStraight-Yzo6v.ttf" />
     <Resource Include="..\..\assets\header_logo.png" />
     <Resource Include="Resources\Icons\app.ico" />
+    <None Include="Resources\Icons\app.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\icon.png" CopyToOutputDirectory="PreserveNewest" Link="assets\icon.png" />
   </ItemGroup>
 

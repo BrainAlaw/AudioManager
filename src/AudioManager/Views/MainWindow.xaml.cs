@@ -160,6 +160,14 @@ public partial class MainWindow : Window
 
     private static System.Drawing.Icon LoadTrayIcon()
     {
+        var path = Path.Combine(AppContext.BaseDirectory, "Resources", "Icons", "app.ico");
+        if (File.Exists(path))
+        {
+            using var stream = File.OpenRead(path);
+            using var icon = new System.Drawing.Icon(stream);
+            return (System.Drawing.Icon)icon.Clone();
+        }
+
         var processPath = Process.GetCurrentProcess().MainModule?.FileName;
         if (!string.IsNullOrWhiteSpace(processPath))
         {
