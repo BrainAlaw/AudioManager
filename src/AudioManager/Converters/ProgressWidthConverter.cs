@@ -19,7 +19,14 @@ public sealed class ProgressWidthConverter : IMultiValueConverter
         }
 
         var clampedValue = Math.Clamp(value, 0d, 1d);
-        return totalWidth * clampedValue;
+        var offset = parameter switch
+        {
+            double doubleValue => doubleValue,
+            string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => 0d
+        };
+
+        return Math.Max(0d, (totalWidth * clampedValue) - offset);
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>

@@ -17,6 +17,7 @@ public partial class OsdWindow : Window
     private OsdNotificationKind _currentKind = OsdNotificationKind.None;
     private bool? _currentMuteState;
     private int _transitionVersion;
+    private string? _lastVolumeDetailKey;
 
     public OsdWindow()
     {
@@ -46,8 +47,14 @@ public partial class OsdWindow : Window
             var percent = (int)MathF.Round(channel.Volume * 100);
             VolumePercent.Text = ApplyDisplaySpacing($"{percent}%");
             VolumePercent.Foreground = accentBrush;
-            VolumeSlider.Value = percent;
-            UpdateVolumeDetail(channel, warningBrush);
+            AnimateVolumeProgress(Math.Clamp(channel.Volume, 0f, 1f));
+
+            var detailKey = BuildVolumeDetailKey(channel);
+            if (!string.Equals(_lastVolumeDetailKey, detailKey, StringComparison.Ordinal))
+            {
+                _lastVolumeDetailKey = detailKey;
+                UpdateVolumeDetail(channel, warningBrush);
+            }
         }
 
         UpdatePosition();
@@ -71,7 +78,10 @@ public partial class OsdWindow : Window
             {
                 Show();
                 FadeIn();
+                return;
             }
+
+            Opacity = 1;
 
             return;
         }
@@ -98,6 +108,7 @@ public partial class OsdWindow : Window
 
     public void FadeIn()
     {
+        BeginAnimation(OpacityProperty, null);
         BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(120)));
     }
 
@@ -112,6 +123,7 @@ public partial class OsdWindow : Window
         {
             if (transitionVersion == _transitionVersion)
             {
+                BeginAnimation(OpacityProperty, null);
                 Hide();
             }
         };
@@ -127,22 +139,47 @@ public partial class OsdWindow : Window
     private void SetVolumeLayout()
     {
         Width = 336;
-        Height = 110;
+        Height = 118;
         Root.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 24, 24));
         Root.BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(51, 51, 51));
         VolumePanel.Visibility = Visibility.Visible;
         MutePanel.Visibility = Visibility.Collapsed;
-        VolumeAppIconsPanel.Visibility = Visibility.Collapsed;
-        VolumeEndpointText.Visibility = Visibility.Collapsed;
-        VolumeMuteStateText.Visibility = Visibility.Collapsed;
     }
 
     private void SetMuteLayout(bool isMuted)
     {
         Width = 214;
         Height = 68;
+        _lastVolumeDetailKey = null;
         VolumePanel.Visibility = Visibility.Collapsed;
         MutePanel.Visibility = Visibility.Visible;
+    }
+
+    private void AnimateVolumeProgress(float targetValue)
+    {
+        var animation = new DoubleAnimation
+        {
+            To = targetValue,
+            Duration = TimeSpan.FromMilliseconds(75),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        VolumeProgress.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, animation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static string BuildVolumeDetailKey(AudioChannelState channel)
+    {
+        var assignedProcesses = channel.AssignedProcesses.Count == 0
+            ? string.Empty
+            : string.Join('|', channel.AssignedProcesses.OrderBy(process => process, StringComparer.OrdinalIgnoreCase));
+
+        return string.Join(
+            "::",
+            channel.Id,
+            channel.Role,
+            channel.IsMuted,
+            channel.Endpoint?.FriendlyName ?? string.Empty,
+            assignedProcesses);
     }
 
     private void UpdateVolumeDetail(AudioChannelState channel, System.Windows.Media.Brush warningBrush)

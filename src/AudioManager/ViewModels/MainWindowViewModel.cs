@@ -841,10 +841,20 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async void OnAppAssignmentChanged(ActiveAudioAppViewModel app, string? previousChannelId, string? channelId)
     {
+        var affectedChannelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(previousChannelId))
+        {
+            affectedChannelIds.Add(previousChannelId);
+        }
+
         foreach (var channel in _configuration.Channels)
         {
-            channel.AssignedProcesses.RemoveAll(candidate =>
+            var removed = channel.AssignedProcesses.RemoveAll(candidate =>
                 string.Equals(candidate, app.ProcessName, StringComparison.OrdinalIgnoreCase));
+            if (removed > 0)
+            {
+                affectedChannelIds.Add(channel.Id);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(channelId))
@@ -856,6 +866,7 @@ public sealed class MainWindowViewModel : ObservableObject
             if (configChannel is not null)
             {
                 configChannel.AssignedProcesses.Add(app.ProcessName);
+                affectedChannelIds.Add(configChannel.Id);
                 await _audioManager.AssignProcessToChannelAsync(app.ProcessName, configChannel.Id);
                 Status = $"{app.DisplayName} assigned to {configChannel.Name}.";
             }
@@ -871,6 +882,40 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         await _settingsService.SaveAsync(_configuration);
+        RefreshChannelAssignmentsFromConfiguration(affectedChannelIds);
+    }
+
+    private void RefreshChannelAssignmentsFromConfiguration(IEnumerable<string?> channelIds)
+    {
+        foreach (var channelId in channelIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var viewModel = Channels.FirstOrDefault(channel =>
+                string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
+            var audioState = _audioManager.Channels.FirstOrDefault(channel =>
+                string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
+            var configChannel = _configuration.Channels.FirstOrDefault(channel =>
+                string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
+
+            if (viewModel is null || audioState is null || configChannel is null)
+            {
+                continue;
+            }
+
+            var mergedState = new AudioChannelState
+            {
+                Id = audioState.Id,
+                Name = audioState.Name,
+                Role = audioState.Role,
+                IconPath = audioState.IconPath,
+                Endpoint = audioState.Endpoint,
+                Volume = audioState.Volume,
+                IsMuted = audioState.IsMuted,
+                PeakValue = audioState.PeakValue
+            };
+
+            mergedState.AssignedProcesses.AddRange(configChannel.AssignedProcesses);
+            viewModel.Update(mergedState, updateVolume: !_volumeApplyCtsByChannel.ContainsKey(mergedState.Id));
+        }
     }
 
     private async void OnEndpointChangeRequested(object? sender, string endpointId)
