@@ -62,9 +62,9 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Image Source="{Binding}"
-                                       Width="16"
-                                       Height="16"
-                                       Margin="0,0,4,0"
+                                       Width="24"
+                                       Height="24"
+                                       Margin="0,0,6,0"
                                        SnapsToDevicePixels="True"
                                        RenderOptions.BitmapScalingMode="HighQuality" />
                             </DataTemplate>

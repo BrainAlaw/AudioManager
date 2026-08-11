@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using NAudio.CoreAudioApi;
+using NAudio.Wave;
 using AudioManager.Contracts;
 using AudioManager.Models;
 using AudioManager.Services;
@@ -11,6 +12,7 @@ namespace AudioManager.Services.Audio;
 public sealed class CoreAudioManager : ICoreAudioManager
 {
     private readonly object _gate = new();
+    private readonly object _microphoneMeterGate = new();
     private readonly List<AudioChannelState> _channels = [];
     private readonly Dictionary<string, string> _processAssignments = new(StringComparer.OrdinalIgnoreCase);
     private readonly MMDeviceEnumerator _deviceEnumerator = new();
@@ -19,6 +21,8 @@ public sealed class CoreAudioManager : ICoreAudioManager
     private bool _assignedSessionLevelsDirty = true;
     private volatile bool _isUiActive = true;
     private volatile bool _diagnosticsEnabled;
+    private float _microphonePeak;
+    private WasapiCapture? _microphoneMeterCapture;
     private CancellationTokenSource? _watcherCts;
     private Task? _meterWatcherTask;
 
@@ -137,6 +141,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         }
 
         ApplyAllChannelOutputs();
+        RestartMicrophoneMeter();
         await RefreshAsync(cancellationToken);
     }
 
@@ -379,6 +384,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
     public async ValueTask DisposeAsync()
     {
         await StopSessionWatcherAsync();
+        StopMicrophoneMeter();
         DisposeCachedRenderSessions(SwapCachedRenderSessions([]));
         _watcherCts?.Dispose();
         _deviceEnumerator.Dispose();
@@ -448,6 +454,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
                 mic.Endpoint = endpoint;
                 ApplyEndpointVolume(mic);
                 ApplyEndpointMute(mic);
+                RestartMicrophoneMeter();
 
                 PublishChanged(mic, "DefaultEndpoint");
             }
@@ -483,7 +490,9 @@ public sealed class CoreAudioManager : ICoreAudioManager
                         PublishChanged(channel, "EndpointMuteObserved");
                     }
 
-                    channel.PeakValue = device.AudioMeterInformation.MasterPeakValue;
+                    channel.PeakValue = channel.Role == AudioChannelRole.Microphone
+                        ? GetMicrophonePeak(device)
+                        : device.AudioMeterInformation.MasterPeakValue;
                 }
                 catch (Exception ex)
                 {
@@ -502,9 +511,8 @@ public sealed class CoreAudioManager : ICoreAudioManager
         try
         {
             using var device = _deviceEnumerator.GetDevice(channel.Endpoint.Id);
-            var endpointPeak = device.AudioMeterInformation.MasterPeakValue;
             var sessionPeak = GetAssignedProcessesPeak(channel, sessionPeaksByProcess);
-            channel.PeakValue = Math.Max(endpointPeak, sessionPeak);
+            channel.PeakValue = sessionPeak;
         }
         catch (Exception ex)
         {
@@ -977,6 +985,171 @@ public sealed class CoreAudioManager : ICoreAudioManager
         {
             return $"pid-{processId}";
         }
+    }
+
+    private void RestartMicrophoneMeter()
+    {
+        lock (_microphoneMeterGate)
+        {
+            StopMicrophoneMeterLocked();
+
+            var mic = FindChannel("mic");
+            if (mic?.Endpoint is null)
+            {
+                Volatile.Write(ref _microphonePeak, 0f);
+                return;
+            }
+
+            try
+            {
+                var device = _deviceEnumerator.GetDevice(mic.Endpoint.Id);
+                var capture = new WasapiCapture(device);
+                capture.DataAvailable += OnMicrophoneMeterDataAvailable;
+                capture.RecordingStopped += OnMicrophoneMeterRecordingStopped;
+                capture.StartRecording();
+                _microphoneMeterCapture = capture;
+            }
+            catch
+            {
+                Volatile.Write(ref _microphonePeak, 0f);
+            }
+        }
+    }
+
+    private void StopMicrophoneMeter()
+    {
+        lock (_microphoneMeterGate)
+        {
+            StopMicrophoneMeterLocked();
+        }
+    }
+
+    private void StopMicrophoneMeterLocked()
+    {
+        if (_microphoneMeterCapture is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _microphoneMeterCapture.DataAvailable -= OnMicrophoneMeterDataAvailable;
+            _microphoneMeterCapture.RecordingStopped -= OnMicrophoneMeterRecordingStopped;
+            _microphoneMeterCapture.StopRecording();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _microphoneMeterCapture.Dispose();
+            _microphoneMeterCapture = null;
+        }
+    }
+
+    private void OnMicrophoneMeterRecordingStopped(object? sender, StoppedEventArgs e)
+    {
+        if (e.Exception is not null)
+        {
+            Faulted?.Invoke(this, new AudioFaultEventArgs
+            {
+                ChannelId = "mic",
+                Message = "Microphone peak meter stopped unexpectedly.",
+                Exception = e.Exception
+            });
+        }
+    }
+
+    private void OnMicrophoneMeterDataAvailable(object? sender, WaveInEventArgs e)
+    {
+        if (sender is not WasapiCapture capture)
+        {
+            return;
+        }
+
+        var peak = ComputePeak(e.Buffer, e.BytesRecorded, capture.WaveFormat);
+        Volatile.Write(ref _microphonePeak, peak);
+    }
+
+    private float GetMicrophonePeak(MMDevice device)
+    {
+        var peak = Volatile.Read(ref _microphonePeak);
+        if (peak > 0f)
+        {
+            return peak;
+        }
+
+        return device.AudioMeterInformation.MasterPeakValue;
+    }
+
+    private static float ComputePeak(byte[] buffer, int bytesRecorded, WaveFormat waveFormat)
+    {
+        if (bytesRecorded <= 0 || buffer.Length == 0)
+        {
+            return 0f;
+        }
+
+        try
+        {
+            if (waveFormat.Encoding == WaveFormatEncoding.IeeeFloat && waveFormat.BitsPerSample == 32)
+            {
+                var max = 0f;
+                for (var index = 0; index + 3 < bytesRecorded; index += sizeof(float))
+                {
+                    var sample = BitConverter.ToSingle(buffer, index);
+                    var amplitude = MathF.Abs(sample);
+                    if (amplitude > max)
+                    {
+                        max = amplitude;
+                    }
+                }
+
+                return Math.Clamp(max, 0f, 1f);
+            }
+
+            if (waveFormat.BitsPerSample == 16)
+            {
+                var max = 0f;
+                for (var index = 0; index + 1 < bytesRecorded; index += sizeof(short))
+                {
+                    var sample = BitConverter.ToInt16(buffer, index) / 32768f;
+                    var amplitude = MathF.Abs(sample);
+                    if (amplitude > max)
+                    {
+                        max = amplitude;
+                    }
+                }
+
+                return Math.Clamp(max, 0f, 1f);
+            }
+
+            if (waveFormat.BitsPerSample == 24)
+            {
+                var max = 0f;
+                for (var index = 0; index + 2 < bytesRecorded; index += 3)
+                {
+                    var sample = buffer[index] | (buffer[index + 1] << 8) | (buffer[index + 2] << 16);
+                    if ((sample & 0x800000) != 0)
+                    {
+                        sample |= unchecked((int)0xFF000000);
+                    }
+
+                    var amplitude = MathF.Abs(sample / 8388608f);
+                    if (amplitude > max)
+                    {
+                        max = amplitude;
+                    }
+                }
+
+                return Math.Clamp(max, 0f, 1f);
+            }
+        }
+        catch
+        {
+            return 0f;
+        }
+
+        return 0f;
     }
 
     private static float Clamp01(float value) => Math.Clamp(value, 0f, 1f);

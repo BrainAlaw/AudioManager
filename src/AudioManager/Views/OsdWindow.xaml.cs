@@ -200,6 +200,7 @@ public partial class OsdWindow : Window
         if (channel.Role == AudioChannelRole.VirtualOutput)
         {
             var processIcons = channel.AssignedProcesses
+                .Take(6)
                 .Select(ProcessPresentationHelper.GetProcessIcon)
                 .OfType<System.Windows.Media.ImageSource>()
                 .ToList();

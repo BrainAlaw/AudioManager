@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 - 2026-08-11
+
+### Fixed
+
+- Improved mixer app icon presentation with stable app chips and overflow handling.
+- Added friendly app-name tooltips for mixer app icons.
+- Improved microphone peak metering by using an internal WASAPI capture meter instead of relying only on the Windows sound panel meter.
+- Fixed Apps List scrollbar scaling and mixer group meters showing activity on unrelated channels.
+- Reduced UI-thread blocking from audio/session updates.
+
 ## 1.0.1 - 2026-07-06
 
 ### Fixed

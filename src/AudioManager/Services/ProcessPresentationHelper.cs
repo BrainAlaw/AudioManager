@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Text;
 
 namespace AudioManager.Services;
 
@@ -43,16 +44,13 @@ public static class ProcessPresentationHelper
 
     public static ImageSource? GetProcessIcon(string processName)
     {
-        try
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName)))
         {
-            var process = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName))
-                .FirstOrDefault();
-
-            if (process is not null)
+            using (process)
             {
-                using (process)
+                try
                 {
-                    var filePath = process.MainModule?.FileName;
+                    var filePath = TryGetExecutablePath(process);
                     if (filePath is not null)
                     {
                         ExecutablePathCache[processName] = filePath;
@@ -65,35 +63,46 @@ public static class ProcessPresentationHelper
                         return icon;
                     }
                 }
+                catch
+                {
+                }
             }
+        }
 
+        try
+        {
             if (ExecutablePathCache.TryGetValue(processName, out var cachedPath))
             {
-                return ExtractIconFromFile(cachedPath);
+                var cachedIcon = ExtractIconFromFile(cachedPath);
+                if (cachedIcon is not null)
+                {
+                    return cachedIcon;
+                }
             }
         }
         catch
         {
         }
 
-        return null;
+        return CreatePlaceholderIcon(processName);
     }
 
     public static ImageSource? GetProcessIcon(Process process)
     {
         try
         {
-            var filePath = process.MainModule?.FileName;
+            var filePath = TryGetExecutablePath(process);
             if (filePath is null)
             {
-                return null;
+                return CreatePlaceholderIcon(process.ProcessName);
             }
 
-            return ExtractIconFromFile(filePath);
+            var icon = ExtractIconFromFile(filePath);
+            return icon ?? CreatePlaceholderIcon(process.ProcessName);
         }
         catch
         {
-            return null;
+            return CreatePlaceholderIcon(process.ProcessName);
         }
     }
 
@@ -138,6 +147,43 @@ public static class ProcessPresentationHelper
         }
     }
 
+    private static ImageSource CreatePlaceholderIcon(string processName)
+    {
+        const int size = 64;
+        var visual = new DrawingVisual();
+        var label = Path.GetFileNameWithoutExtension(processName)
+            .Where(char.IsLetterOrDigit)
+            .Take(2)
+            .Aggregate(string.Empty, (current, character) => current + char.ToUpperInvariant(character));
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = "?";
+        }
+
+        using (var context = visual.RenderOpen())
+        {
+            var background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 45, 45));
+            var accent = new SolidColorBrush(System.Windows.Media.Color.FromRgb(225, 6, 0));
+            var text = new FormattedText(
+                label,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"),
+                24,
+                System.Windows.Media.Brushes.White,
+                VisualTreeHelper.GetDpi(visual).PixelsPerDip);
+
+            context.DrawRoundedRectangle(background, new System.Windows.Media.Pen(accent, 2), new Rect(0, 0, size, size), 12, 12);
+            context.DrawText(text, new System.Windows.Point((size - text.Width) / 2, (size - text.Height) / 2));
+        }
+
+        var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
     private static string? TryGetFriendlyNameFromRunningProcess(string processName)
     {
         try
@@ -152,7 +198,16 @@ public static class ProcessPresentationHelper
 
             using (process)
             {
-                var versionInfo = process.MainModule?.FileVersionInfo;
+                var filePath = TryGetExecutablePath(process);
+                if (filePath is not null)
+                {
+                    ExecutablePathCache[processName] = filePath;
+                    OnPathResolved?.Invoke(processName, filePath);
+                }
+
+                var versionInfo = filePath is null
+                    ? null
+                    : FileVersionInfo.GetVersionInfo(filePath);
                 return CleanDisplayName(versionInfo?.FileDescription, processName)
                        ?? CleanDisplayName(versionInfo?.ProductName, processName);
             }
@@ -178,6 +233,37 @@ public static class ProcessPresentationHelper
         return string.IsNullOrWhiteSpace(cleaned) ? null : cleaned;
     }
 
+    private static string? TryGetExecutablePath(Process process)
+    {
+        try
+        {
+            var buffer = new StringBuilder(1024);
+            var length = (uint)buffer.Capacity;
+            var handle = process.Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            if (QueryFullProcessImageName(handle, 0, buffer, ref length) && length > 0)
+            {
+                return buffer.ToString(0, (int)length);
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ShFileInfo
@@ -200,6 +286,14 @@ public static class ProcessPresentationHelper
         ref ShFileInfo psfi,
         uint cbFileInfo,
         uint uFlags);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageName(
+        IntPtr hProcess,
+        int dwFlags,
+        StringBuilder lpExeName,
+        ref uint lpdwSize);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);

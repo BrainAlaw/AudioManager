@@ -86,9 +86,9 @@ public sealed class ChannelStripViewModel : ObservableObject
 
     public bool HasHiddenAssignedApps => HiddenAssignedProcessIcons.Count > 0;
 
-    public bool HasSingleRowAssignedApps => AssignedProcessIcons.Count <= 7;
+    public bool HasSingleRowAssignedApps => AssignedProcessIcons.Count <= 3;
 
-    public bool HasMultiRowAssignedApps => AssignedProcessIcons.Count > 7;
+    public bool HasMultiRowAssignedApps => AssignedProcessIcons.Count > 3;
 
     public bool IsEndpointSelectorVisible => false;
 
@@ -229,7 +229,8 @@ public sealed class ChannelStripViewModel : ObservableObject
                 var icon = ProcessPresentationHelper.GetProcessIcon(processName);
                 if (icon is not null)
                 {
-                    AssignedProcessIcons.Add(new AssignedProcessIconViewModel(processName, icon));
+                    var displayName = ProcessPresentationHelper.GetFriendlyName(processName);
+                    AssignedProcessIcons.Add(new AssignedProcessIconViewModel(processName, displayName, icon));
                 }
             }
 
@@ -339,12 +340,12 @@ public sealed class ChannelStripViewModel : ObservableObject
         VisibleAssignedProcessIcons.Clear();
         HiddenAssignedProcessIcons.Clear();
 
-        foreach (var icon in AssignedProcessIcons.Take(7))
+        foreach (var icon in AssignedProcessIcons.Take(3))
         {
             VisibleAssignedProcessIcons.Add(icon);
         }
 
-        foreach (var icon in AssignedProcessIcons.Skip(7))
+        foreach (var icon in AssignedProcessIcons.Skip(3))
         {
             HiddenAssignedProcessIcons.Add(icon);
         }
@@ -398,4 +399,4 @@ public sealed class ChannelStripViewModel : ObservableObject
         value.Replace("\u2009", string.Empty, StringComparison.Ordinal);
 }
 
-public sealed record AssignedProcessIconViewModel(string ProcessName, ImageSource Icon);
+public sealed record AssignedProcessIconViewModel(string ProcessName, string DisplayName, ImageSource Icon);

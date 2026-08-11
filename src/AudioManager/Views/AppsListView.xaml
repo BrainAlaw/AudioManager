@@ -22,55 +22,63 @@
                       HorizontalScrollBarVisibility="Disabled"
                       CanContentScroll="True">
             <ItemsControl ItemsSource="{Binding ActiveAudioApps}"
-                          HorizontalAlignment="Center">
+                          HorizontalAlignment="Stretch">
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"
-                                   HorizontalAlignment="Center" />
+                        <StackPanel Orientation="Vertical" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Style="{StaticResource Vm.AppCard}" Width="260" Margin="8">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                        <Border Style="{StaticResource Vm.AppCard}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,0,10"
+                                Padding="14,12">
+                            <Grid HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="260" />
+                                </Grid.ColumnDefinitions>
 
-                                <DockPanel Grid.Row="0" Margin="0,0,0,12" LastChildFill="True">
-                                    <Image Source="{Binding Icon}"
-                                           Width="40"
-                                           Height="40"
-                                           Margin="0,0,12,0"
-                                           DockPanel.Dock="Left"
-                                           RenderOptions.BitmapScalingMode="HighQuality"
-                                           SnapsToDevicePixels="True" />
+                                <Image Grid.Column="0"
+                                       Source="{Binding Icon}"
+                                       Width="42"
+                                       Height="42"
+                                       Margin="0,0,14,0"
+                                       VerticalAlignment="Center"
+                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                       SnapsToDevicePixels="True" />
 
+                                <StackPanel Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,18,0">
                                     <TextBlock VerticalAlignment="Center"
-                                               Text="{Binding DisplayNameTwoLines}"
+                                               Text="{Binding DisplayNameSpaced}"
                                                FontWeight="SemiBold"
                                                FontSize="14"
                                                Foreground="{StaticResource Vm.TextBrush}"
-                                               TextWrapping="NoWrap"
-                                               LineHeight="16"
-                                               LineStackingStrategy="BlockLineHeight"
+                                               TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding DisplayName}"
                                                SnapsToDevicePixels="True"
                                                UseLayoutRounding="True"
                                                TextOptions.TextFormattingMode="Display" />
-                                </DockPanel>
-
-                                <StackPanel Grid.Row="1" Margin="0,10,0,12">
-                                    <ComboBox ItemsSource="{Binding DataContext.AssignableChannelOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                              SelectedValue="{Binding AssignedChannelId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                              SelectedValuePath="Id"
-                                              DisplayMemberPath="NameSpaced"
-                                              Style="{StaticResource Vm.ComboBox}"
-                                              ItemContainerStyle="{StaticResource Vm.ComboBoxItem}"
-                                              Visibility="Visible" />
                                 </StackPanel>
+
+                                <ComboBox Grid.Column="2"
+                                          ItemsSource="{Binding DataContext.AssignableChannelOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          SelectedValue="{Binding AssignedChannelId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          SelectedValuePath="Id"
+                                          DisplayMemberPath="NameSpaced"
+                                          Style="{StaticResource Vm.ComboBox}"
+                                          ItemContainerStyle="{StaticResource Vm.ComboBoxItem}"
+                                          VerticalAlignment="Center"
+                                          Visibility="Visible" />
                             </Grid>
                         </Border>
                     </DataTemplate>

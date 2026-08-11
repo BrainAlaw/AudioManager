@@ -465,6 +465,8 @@
     </Style>
 
     <Style x:Key="Vm.ScrollBarThumb" TargetType="{x:Type Thumb}">
+        <Setter Property="MinHeight" Value="48" />
+        <Setter Property="MinWidth" Value="10" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Thumb}">
@@ -504,7 +506,7 @@
                                 <RepeatButton Style="{StaticResource Vm.ScrollBarTrack}" />
                             </Track.DecreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb Style="{StaticResource Vm.ScrollBarThumb}" Height="48" Width="10" />
+                                <Thumb Style="{StaticResource Vm.ScrollBarThumb}" />
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource Vm.ScrollBarTrack}" />

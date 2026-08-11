@@ -197,12 +197,12 @@
                 </ToggleButton>
 
                 <Grid Grid.Row="2"
-                      Width="112"
-                      Height="64"
-                      Margin="0,3,0,0"
+                      Width="124"
+                      Height="72"
+                      Margin="0,2,0,0"
                       Visibility="{Binding CanShowEndpointName, Converter={StaticResource BoolToVis}}">
-                    <Canvas Width="112"
-                            Height="64"
+                    <Canvas Width="124"
+                            Height="72"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
                         <TextBlock Text="{Binding SpacedEndpointName}"
@@ -222,13 +222,13 @@
 
                 <!-- Assigned Process Icons -->
                 <Grid Grid.Row="2"
-                      Width="112"
-                      Height="64"
-                      Margin="0,3,0,0"
+                      Width="106"
+                      Height="72"
+                      Margin="0,2,0,0"
                       Visibility="{Binding CanShowAssignedApps, Converter={StaticResource BoolToVis}}">
                     <StackPanel VerticalAlignment="Center"
                                 HorizontalAlignment="Center"
-                                Margin="-13,0,0,0"
+                                Margin="0,0,0,0"
                                 Visibility="{Binding HasNoAssignedApps, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="N&#x2009;o&#x2009; &#x2009;A&#x2009;p&#x2009;p&#x2009;s"
                                    Foreground="#A8A8A8"
@@ -243,34 +243,17 @@
                                    Margin="0,2,0,0" />
                     </StackPanel>
 
-                    <Grid Width="96"
-                          Height="44"
-                          Margin="-10,0,0,0"
+                    <StackPanel Width="104"
+                          Height="52"
+                          Margin="0,0,0,0"
                           HorizontalAlignment="Center"
                           VerticalAlignment="Center"
+                          Orientation="Horizontal"
+                          ClipToBounds="False"
                           Visibility="{Binding HasAssignedApps, Converter={StaticResource BoolToVis}}">
-                        <Grid.Style>
-                            <Style TargetType="Grid">
-                                <Setter Property="Width" Value="96" />
-                                <Setter Property="Margin" Value="-10,0,0,0" />
-                                <Setter Property="HorizontalAlignment" Value="Center" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasSingleRowAssignedApps}" Value="True">
-                                        <Setter Property="Width" Value="112" />
-                                        <Setter Property="Margin" Value="0,0,0,0" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Grid.Style>
-
                         <ItemsControl ItemsSource="{Binding VisibleAssignedProcessIcons}"
-                                      Width="Auto"
                                       HorizontalAlignment="Center"
-                                      VerticalAlignment="Center"
-                                      Visibility="{Binding HasSingleRowAssignedApps, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl.RenderTransform>
-                                <TranslateTransform Y="1" />
-                            </ItemsControl.RenderTransform>
+                                      VerticalAlignment="Center">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal" />
@@ -278,45 +261,34 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Image Source="{Binding Icon}"
-                                           Width="16"
-                                           Height="16"
-                                           Margin="2,2,2,1"
-                                           ToolTip="{Binding ProcessName}"
-                                           RenderOptions.BitmapScalingMode="HighQuality" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <ItemsControl ItemsSource="{Binding VisibleAssignedProcessIcons}"
-                                      Width="96"
-                                      HorizontalAlignment="Left"
-                                      VerticalAlignment="Center"
-                                      Visibility="{Binding HasMultiRowAssignedApps, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="4" Rows="2" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Image Source="{Binding Icon}"
-                                           Width="16"
-                                           Height="16"
-                                           Margin="2,2,2,1"
-                                           ToolTip="{Binding ProcessName}"
-                                           RenderOptions.BitmapScalingMode="HighQuality" />
+                                    <Border Width="24"
+                                            Height="24"
+                                            Margin="1"
+                                            CornerRadius="5"
+                                            Background="{StaticResource Vm.SurfaceBrush}"
+                                            BorderBrush="{StaticResource Vm.BorderBrush}"
+                                            BorderThickness="1"
+                                            ToolTip="{Binding DisplayName}">
+                                        <Image Source="{Binding Icon}"
+                                               Width="14"
+                                               Height="14"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               RenderOptions.BitmapScalingMode="HighQuality" />
+                                    </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
                         <ToggleButton x:Name="MoreAppsToggle"
                                       Style="{StaticResource AppMoreToggle}"
-                                      Margin="0,4,0,0"
-                                      HorizontalAlignment="Right"
-                                      VerticalAlignment="Bottom"
+                                      Margin="2,0,0,0"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      ToolTip="Show assigned apps"
                                       Visibility="{Binding HasHiddenAssignedApps, Converter={StaticResource BoolToVis}}" />
-                    </Grid>
+                    </StackPanel>
 
                     <Popup PlacementTarget="{Binding ElementName=MoreAppsToggle}"
                            Placement="Right"
@@ -329,22 +301,32 @@
                                 CornerRadius="6"
                                 Padding="10">
                             <ItemsControl ItemsSource="{Binding HiddenAssignedProcessIcons}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal" MaxWidth="132" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" MaxWidth="140" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="28"
+                                            Height="28"
+                                            Margin="4"
+                                            CornerRadius="6"
+                                            Background="{StaticResource Vm.SurfaceBrush}"
+                                            BorderBrush="{StaticResource Vm.BorderBrush}"
+                                            BorderThickness="1"
+                                            ToolTip="{Binding DisplayName}">
                                         <Image Source="{Binding Icon}"
-                                               Width="22"
-                                               Height="22"
-                                               Margin="4"
-                                               ToolTip="{Binding ProcessName}"
+                                               Width="16"
+                                               Height="16"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
                                                RenderOptions.BitmapScalingMode="HighQuality" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         </Border>
                     </Popup>
                 </Grid>

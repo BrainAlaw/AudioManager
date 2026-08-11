@@ -59,11 +59,13 @@ public sealed class KeyboardHookService : IKeyboardHookService
         {
             var virtualKey = Marshal.ReadInt32(lParam);
             var key = KeyInterop.KeyFromVirtualKey(virtualKey);
-            KeyPressed?.Invoke(this, new KeyboardKeyEventArgs
+            var args = new KeyboardKeyEventArgs
             {
                 VirtualKey = virtualKey,
                 KeyName = key == Key.None ? $"VK {virtualKey}" : key.ToString()
-            });
+            };
+
+            ThreadPool.QueueUserWorkItem(_ => KeyPressed?.Invoke(this, args));
         }
 
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
