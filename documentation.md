@@ -27,8 +27,11 @@ Audio Manager has three main views:
 - `VirtualOutput` channels control assigned process sessions through `SimpleAudioVolume`.
 - Active audio sessions are enumerated across render devices and grouped by process name.
 - Peak meters are refreshed in the background.
+- The microphone meter uses a lightweight WASAPI capture meter so it does not depend on the Windows Sound settings panel being open.
 
 The app does not process raw PCM audio. It does not currently implement DSP, EQ, virtual device routing, or APO-based effects.
+
+MIDI input is auto-connected across available MIDI input devices. Bindings still determine which CC, note, or keyboard input controls each mixer action.
 
 ## Configuration
 
@@ -90,15 +93,15 @@ Local prerequisites:
 Build locally:
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.0.0
+.\scripts\build-release.ps1 -Version 1.0.2
 ```
 
 Outputs:
 
 ```text
 artifacts\publish\win-x64\
-artifacts\installer\AudioManager-Setup-1.0.0.exe
-artifacts\AudioManager-1.0.0-win-x64.zip
+artifacts\installer\AudioManager-Setup-1.0.2.exe
+artifacts\AudioManager-1.0.2-win-x64.zip
 ```
 
 The installer writes to:
@@ -116,8 +119,8 @@ The `release.yml` workflow builds the app, compiles the installer, creates a zip
 Create a release:
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 The workflow requires repository permission:

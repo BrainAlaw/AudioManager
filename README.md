@@ -4,6 +4,8 @@ Audio Manager is a Windows desktop mixer for people who want fast control over a
 
 It is designed around MIDI controllers, keyboard hotkeys, tray usage, and a compact dark UI.
 
+Current release: `1.0.2`.
+
 ## Screenshots
 
 ![Mixer view](assets/preview/1.png)
@@ -22,9 +24,13 @@ It is designed around MIDI controllers, keyboard hotkeys, tray usage, and a comp
 
 - Control microphone, master output, and grouped app channels from one window.
 - Assign running apps to mixer channels such as chat, game, media, and music.
+- Keep assigned apps visible even when they are not currently running.
+- Show assigned apps as compact mixer chips with friendly-name tooltips and overflow handling.
 - Control volume and mute from MIDI controllers.
+- Automatically listen to available MIDI input devices.
 - Bind keyboard shortcuts for mute and volume changes.
 - Show optional on-screen notifications for hardware volume and mute changes.
+- Display microphone, master, and app-group peak meters.
 - Run in the system tray.
 - Start with Windows.
 - Persist app assignments, bindings, tray settings, and notification settings.
@@ -54,6 +60,8 @@ It also creates a Start Menu shortcut and can optionally create a desktop shortc
 
 Microphone and master output follow the current Windows default devices. App channels control assigned application sessions.
 
+Audio Manager does not require virtual audio cables for app grouping. Apps are assigned by process name and controlled through Windows audio sessions.
+
 ## MIDI and Hotkeys
 
 Open `Settings` and use the learn buttons to bind:
@@ -64,6 +72,8 @@ Open `Settings` and use the learn buttons to bind:
 - keyboard volume up/down
 
 Audio Manager works best with MIDI devices that expose knobs or buttons as standard MIDI CC or note messages.
+
+MIDI input is auto-connected across available input devices. Manual device selection is not required for normal use.
 
 ## Notifications
 
