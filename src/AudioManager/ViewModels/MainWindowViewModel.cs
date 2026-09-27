@@ -1447,17 +1447,23 @@ public sealed class MainWindowViewModel : ObservableObject
         _configurationSaveCts = new CancellationTokenSource();
         var token = _configurationSaveCts.Token;
 
-        _ = Task.Run(async () =>
+        _ = SaveConfigurationAfterDelayAsync(token);
+    }
+
+    private async Task SaveConfigurationAfterDelayAsync(CancellationToken token)
+    {
+        try
         {
-            try
-            {
-                await Task.Delay(500, token);
-                await _settingsService.SaveAsync(_configuration, token);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }, token);
+            await Task.Delay(500, token);
+            await _settingsService.SaveAsync(_configuration, token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Status = $"Settings save failed: {ex.Message}";
+        }
     }
 
     private void QueueChannelVolumeApply(string channelId, float volume)

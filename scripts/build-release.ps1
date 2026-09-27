@@ -44,6 +44,10 @@ dotnet publish $projectPath `
     -p:InformationalVersion=$Version `
     -o $publishDir
 
+if ($LASTEXITCODE -ne 0) {
+    throw "Application publish failed with exit code $LASTEXITCODE."
+}
+
 if (Test-Path $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
@@ -54,6 +58,10 @@ Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -Fo
     "/DAppVersion=$Version" `
     "/DPublishDir=$publishDir" `
     $innoScript
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Installer compilation failed with exit code $LASTEXITCODE."
+}
 
 Write-Host "Release artifacts:"
 Write-Host "  $zipPath"

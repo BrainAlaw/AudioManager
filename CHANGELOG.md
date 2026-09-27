@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3 - 2026-09-27
+
+### Fixed
+
+- Save settings atomically after changes instead of writing during application shutdown.
+- Keep the previous settings in a backup and recover it when the main configuration is unreadable.
+- Preserve unreadable configuration files for diagnosis and show a startup error if recovery fails, instead of overwriting settings with defaults.
+- Save debounced settings on the UI context and report background save errors in the status bar.
+
+### Validation
+
+- Added settings regression checks to the release pipeline.
+
 ## 1.0.2 - 2026-08-11
 
 ### Fixed

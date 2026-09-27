@@ -21,6 +21,10 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Verify settings persistence
+        shell: pwsh
+        run: dotnet run --project tests/SettingsRegression/SettingsRegression.csproj --configuration Release
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y

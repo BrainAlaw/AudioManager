@@ -37,7 +37,17 @@ public partial class App : System.Windows.Application
         _serviceProvider = services.BuildServiceProvider();
 
         var viewModel = _serviceProvider.GetRequiredService<MainWindowViewModel>();
-        await viewModel.InitializeAsync();
+        try
+        {
+            await viewModel.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"Audio Manager could not start. Your settings have not been reset.\n\n{ex.Message}",
+                "Audio Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
 
         MainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         MainWindow.Show();
@@ -69,11 +79,6 @@ public partial class App : System.Windows.Application
     {
         if (_serviceProvider is not null)
         {
-            if (_serviceProvider.GetService<MainWindowViewModel>() is { } viewModel)
-            {
-                await viewModel.SaveImmediatelyAsync();
-            }
-
             if (_serviceProvider.GetService<ICoreAudioManager>() is { } audioManager)
             {
                 await audioManager.DisposeAsync();

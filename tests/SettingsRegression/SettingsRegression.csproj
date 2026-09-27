@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/AudioManager/Models/*.cs" Link="Models/%(Filename)%(Extension)" />
+    <Compile Include="../../src/AudioManager/Contracts/ISettingsService.cs" Link="ISettingsService.cs" />
+    <Compile Include="../../src/AudioManager/Services/Settings/JsonSettingsService.cs" Link="JsonSettingsService.cs" />
+  </ItemGroup>
+</Project>

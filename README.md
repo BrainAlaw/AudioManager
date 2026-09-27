@@ -4,7 +4,7 @@ Audio Manager is a Windows desktop mixer for people who want fast control over a
 
 It is designed around MIDI controllers, keyboard hotkeys, tray usage, and a compact dark UI.
 
-Current release: `1.0.2`.
+Current release: `1.0.3`.
 
 ## Screenshots
 
@@ -93,7 +93,13 @@ User settings are stored in:
 %APPDATA%\AudioManager\settings.json
 ```
 
-Deleting this file resets the app configuration on the next launch.
+Settings are saved after changes; volume and mute updates use a 500 ms debounce. Application exit does not write settings.
+
+Writes use a temporary file on the same volume, flush it to disk, and atomically replace `settings.json`. The previous configuration is kept in `settings.json.bak`. If the main file cannot be read, the backup is restored and the failed file is preserved as `settings.json.corrupt.<id>`. If neither file can be read, startup shows an error instead of saving defaults.
+
+To reset the configuration, close the app and move both `settings.json` and `settings.json.bak` to a separate backup folder before launching again.
+
+Run the focused settings regression checks with `dotnet run --project tests/SettingsRegression/SettingsRegression.csproj`.
 
 ## Requirements
 
