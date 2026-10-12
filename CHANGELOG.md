@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 - 2026-10-12
+
+### Fixed
+
+- Apps List now shows only applications that are actually playing audio (like the Windows volume mixer). Background processes with idle sessions and unidentified `pid-*` entries are no longer listed. Assigned apps stay listed while closed or paused.
+
 ## 1.0.4 - 2026-10-12
 
 ### Fixed

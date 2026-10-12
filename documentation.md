@@ -93,15 +93,15 @@ Local prerequisites:
 Build locally:
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.0.4
+.\scripts\build-release.ps1 -Version 1.0.5
 ```
 
 Outputs:
 
 ```text
 artifacts\publish\win-x64\
-artifacts\installer\AudioManager-Setup-1.0.4.exe
-artifacts\AudioManager-1.0.4-win-x64.zip
+artifacts\installer\AudioManager-Setup-1.0.5.exe
+artifacts\AudioManager-1.0.5-win-x64.zip
 ```
 
 The installer writes to:
@@ -119,8 +119,8 @@ The `release.yml` workflow builds the app, compiles the installer, creates a zip
 Create a release:
 
 ```powershell
-git tag v1.0.4
-git push origin v1.0.4
+git tag v1.0.5
+git push origin v1.0.5
 ```
 
 The workflow requires repository permission:

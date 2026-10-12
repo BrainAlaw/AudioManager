@@ -782,7 +782,11 @@ public sealed class CoreAudioManager : ICoreAudioManager, IDisposable
 
     private IReadOnlyList<ActiveAudioSessionInfo> BuildActiveSessionsSnapshot(IReadOnlyList<CachedRenderSession> cachedSessions)
     {
+        // Like the Windows volume mixer: list only apps with a live stream, never unidentified pid-* leftovers.
+        // Inactive sessions stay in the cache so assigned apps still receive their channel level.
         return cachedSessions
+            .Where(session => session.IsActive &&
+                              !session.ProcessName.StartsWith("pid-", StringComparison.OrdinalIgnoreCase))
             .GroupBy(session => session.ProcessName, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
@@ -1434,6 +1438,21 @@ public sealed class CoreAudioManager : ICoreAudioManager, IDisposable
             EndpointId = endpointId;
             EndpointName = endpointName;
             AssignedChannelId = assignedChannelId;
+        }
+
+        public bool IsActive
+        {
+            get
+            {
+                try
+                {
+                    return Session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
         }
 
         public float GetPeakValue()
