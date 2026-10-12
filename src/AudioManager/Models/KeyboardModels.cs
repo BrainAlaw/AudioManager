@@ -16,4 +16,6 @@ public sealed class KeyboardKeyEventArgs : EventArgs
     public required int VirtualKey { get; init; }
 
     public required string KeyName { get; init; }
+
+    public bool IsRepeat { get; init; }
 }

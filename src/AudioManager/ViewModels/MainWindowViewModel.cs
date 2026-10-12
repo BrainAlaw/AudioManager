@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows;
+using System.Windows.Threading;
 using System.Reflection;
 using AudioManager.Contracts;
 using AudioManager.Models;
@@ -21,6 +23,7 @@ public enum ViewType
 public sealed class MainWindowViewModel : ObservableObject
 {
     private const float VolumeStepPerTick = 0.01f;
+    private static readonly TimeSpan SaveDebounce = TimeSpan.FromMilliseconds(500);
     private static readonly string[] ChannelDisplayOrder = ["mic", AudioChannelConfig.MasterChannelId, "chat", "game", "browser", "music"];
 
     private readonly ISettingsService _settingsService;
@@ -32,7 +35,15 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly Dictionary<string, DateTimeOffset> _lastCcMuteToggleAt = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, DateTimeOffset> _lastKeyboardMuteToggleAt = [];
     private readonly Dictionary<string, CancellationTokenSource> _volumeApplyCtsByChannel = new(StringComparer.OrdinalIgnoreCase);
-    private CancellationTokenSource? _configurationSaveCts;
+    private readonly Dispatcher _dispatcher;
+    private readonly DispatcherTimer _saveTimer;
+    private readonly SemaphoreSlim _assignmentGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, (AudioChannelState State, string Reason)> _pendingChannelUpdates = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<ActiveAudioSessionInfo>? _pendingSessions;
+    private int _channelFlushQueued;
+    private int _sessionFlushQueued;
+    private int _saveFailures;
+    private bool _configurationLoaded;
     private MixerConfiguration _configuration = new();
     private string _status = "Starting";
     private string _midiStatus = "Not connected";
@@ -134,6 +145,12 @@ public sealed class MainWindowViewModel : ObservableObject
         _keyboardHook = keyboardHook;
         _osdService = osdService;
         _startupService = startupService;
+        _dispatcher = WpfApplication.Current.Dispatcher;
+        _saveTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = SaveDebounce
+        };
+        _saveTimer.Tick += OnSaveTimerTick;
 
         _audioManager.ChannelChanged += OnAudioChannelChanged;
         _audioManager.ActiveSessionsChanged += OnActiveSessionsChanged;
@@ -264,21 +281,16 @@ public sealed class MainWindowViewModel : ObservableObject
     public async Task InitializeAsync()
     {
         _configuration = await _settingsService.LoadAsync();
+        _configurationLoaded = true;
         await MigrateConfigurationAsync();
+        PruneProcessExecutablePaths();
 
         foreach (var kvp in _configuration.ProcessExecutablePaths)
         {
             ProcessPresentationHelper.CachePath(kvp.Key, kvp.Value);
         }
 
-        ProcessPresentationHelper.OnPathResolved = (processName, path) =>
-        {
-            if (!_configuration.ProcessExecutablePaths.ContainsKey(processName))
-            {
-                _configuration.ProcessExecutablePaths[processName] = path;
-                QueueConfigurationSave();
-            }
-        };
+        ProcessPresentationHelper.OnPathResolved = OnProcessPathResolved;
 
         MinimizeToTray = _configuration.MinimizeToTray;
         CloseToTray = _configuration.CloseToTray;
@@ -286,7 +298,14 @@ public sealed class MainWindowViewModel : ObservableObject
         RunOnStartup = _configuration.RunOnStartup;
         NotificationsEnabled = _configuration.NotificationsEnabled;
         _configuration.MidiAutoConnect = true;
+        await ReconcileStartupRegistrationAsync();
         await _audioManager.InitializeAsync(_configuration);
+
+        // Master and microphone mirror Windows; take over whatever the endpoints report right now.
+        foreach (var endpointChannel in _audioManager.Channels.Where(channel => channel.Role is AudioChannelRole.Master or AudioChannelRole.Microphone))
+        {
+            SyncEndpointStateToConfiguration(endpointChannel);
+        }
 
         var renderEndpoints = await _audioManager.GetAvailableEndpointsAsync(AudioEndpointKind.Render);
         var captureEndpoints = await _audioManager.GetAvailableEndpointsAsync(AudioEndpointKind.Capture);
@@ -333,6 +352,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         _midiListener.UpdateBindings(_configuration.MidiBindings);
+        UpdateKeyboardHookFilter();
         _keyboardHook.Start();
         RefreshMidiDevices();
 
@@ -343,20 +363,51 @@ public sealed class MainWindowViewModel : ObservableObject
         Status = "Ready";
     }
 
-    public async Task SaveImmediatelyAsync()
+    /// <summary>
+    /// Synchronous shutdown path: finishes pending volume writes and persists the configuration.
+    /// Safe to call repeatedly and from the UI thread.
+    /// </summary>
+    public void FlushOnExit()
     {
+        _saveTimer.Stop();
+
+        // A failed load leaves default settings in memory; persisting them would destroy the user's real file.
+        if (!_configurationLoaded)
+        {
+            return;
+        }
+
+        var pendingVolumeChannels = _volumeApplyCtsByChannel.Keys.ToList();
         foreach (var pendingVolumeApply in _volumeApplyCtsByChannel.Values.ToList())
         {
             pendingVolumeApply.Cancel();
         }
 
         _volumeApplyCtsByChannel.Clear();
-        _configurationSaveCts?.Cancel();
-        _configurationSaveCts?.Dispose();
-        _configurationSaveCts = null;
 
-        _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, 6);
-        await _settingsService.SaveAsync(_configuration);
+        try
+        {
+            // Run off the UI thread so awaited continuations can never deadlock against this blocking wait.
+            Task.Run(async () =>
+            {
+                foreach (var channelId in pendingVolumeChannels)
+                {
+                    var configChannel = _configuration.Channels.FirstOrDefault(candidate =>
+                        string.Equals(candidate.Id, channelId, StringComparison.OrdinalIgnoreCase));
+                    if (configChannel is not null)
+                    {
+                        await _audioManager.SetChannelVolumeAsync(channelId, configChannel.Volume);
+                    }
+                }
+
+                _configuration.SchemaVersion = Math.Max(_configuration.SchemaVersion, MixerConfiguration.CurrentSchemaVersion);
+                await PersistAsync();
+            }).Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Final settings flush failed", ex);
+        }
     }
 
     private void SwitchView(object? parameter)
@@ -409,29 +460,100 @@ public sealed class MainWindowViewModel : ObservableObject
             }
         }
 
-        if (_configuration.SchemaVersion < 3)
-        {
-            changed = true;
-        }
-
-        if (_configuration.SchemaVersion < 4)
-        {
-            changed = true;
-        }
-
-        if (_configuration.SchemaVersion < 5)
-        {
-            changed = true;
-        }
-
         changed |= RenameChannel("mic", "Mic");
+        changed |= _configuration.SchemaVersion < MixerConfiguration.CurrentSchemaVersion;
         if (!changed)
         {
             return;
         }
 
-        _configuration.SchemaVersion = 6;
-        await _settingsService.SaveAsync(_configuration);
+        _configuration.SchemaVersion = MixerConfiguration.CurrentSchemaVersion;
+        await PersistAsync();
+    }
+
+    private void PruneProcessExecutablePaths()
+    {
+        var assigned = new HashSet<string>(
+            _configuration.Channels.SelectMany(channel => channel.AssignedProcesses),
+            StringComparer.OrdinalIgnoreCase);
+
+        var stale = _configuration.ProcessExecutablePaths.Keys.Where(key => !assigned.Contains(key)).ToList();
+        foreach (var key in stale)
+        {
+            _configuration.ProcessExecutablePaths.Remove(key);
+        }
+
+        if (stale.Count > 0)
+        {
+            QueueConfigurationSave();
+        }
+    }
+
+    private void OnProcessPathResolved(string processName, string path)
+    {
+        // Raised from audio/watcher threads; the configuration is only touched on the UI thread.
+        _ = _dispatcher.BeginInvoke(() =>
+        {
+            var isAssigned = _configuration.Channels.Any(channel =>
+                channel.AssignedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase));
+            if (!isAssigned ||
+                (_configuration.ProcessExecutablePaths.TryGetValue(processName, out var existing) &&
+                 string.Equals(existing, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            _configuration.ProcessExecutablePaths[processName] = path;
+            QueueConfigurationSave();
+        });
+    }
+
+    private void SyncEndpointStateToConfiguration(AudioChannelState state)
+    {
+        var configChannel = _configuration.Channels.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, state.Id, StringComparison.OrdinalIgnoreCase));
+        if (configChannel is null)
+        {
+            return;
+        }
+
+        var changed = false;
+        if (Math.Abs(configChannel.Volume - state.Volume) > 0.0001f)
+        {
+            configChannel.Volume = state.Volume;
+            changed = true;
+        }
+
+        if (configChannel.IsMuted != state.IsMuted)
+        {
+            configChannel.IsMuted = state.IsMuted;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            QueueConfigurationSave();
+        }
+    }
+
+    private async Task ReconcileStartupRegistrationAsync()
+    {
+        try
+        {
+            if (_configuration.RunOnStartup)
+            {
+                // Rewrites the Run entry so a moved or updated executable keeps launching.
+                await _startupService.SetEnabledAsync(true);
+            }
+            else if (_startupService.IsEnabled())
+            {
+                await _startupService.SetEnabledAsync(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Startup registration reconcile failed", ex);
+        }
     }
 
     private bool RenameChannel(string channelId, string name)
@@ -537,10 +659,18 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private string? ResolveAutoConnectDeviceId()
     {
-        if (!string.IsNullOrWhiteSpace(_configuration.SelectedMidiDeviceId) &&
-            MidiDevices.Any(device => device.Id == _configuration.SelectedMidiDeviceId))
+        var saved = _configuration.SelectedMidiDeviceId;
+        if (!string.IsNullOrWhiteSpace(saved))
         {
-            return _configuration.SelectedMidiDeviceId;
+            // Device indexes shift when hardware is re-plugged; fall back to the product name.
+            var savedName = saved.Contains(':') ? saved[(saved.IndexOf(':') + 1)..] : saved;
+            var match = MidiDevices.FirstOrDefault(device => device.Id == saved)
+                        ?? MidiDevices.FirstOrDefault(device =>
+                            string.Equals(device.Name, savedName, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match.Id;
+            }
         }
 
         return MidiDevices
@@ -555,8 +685,12 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             _ignoreMuteInputUntil = DateTimeOffset.UtcNow.AddMilliseconds(800);
             await _midiListener.StartAsync(SelectedMidiDeviceId ?? string.Empty);
-            _configuration.SelectedMidiDeviceId = SelectedMidiDeviceId;
-            await _settingsService.SaveAsync(_configuration);
+            if (!string.Equals(_configuration.SelectedMidiDeviceId, SelectedMidiDeviceId, StringComparison.Ordinal))
+            {
+                _configuration.SelectedMidiDeviceId = SelectedMidiDeviceId;
+                QueueConfigurationSave();
+            }
+
             IsMidiConnected = true;
             MidiStatus = string.IsNullOrWhiteSpace(SelectedMidiDeviceId)
                 ? $"Listening on all MIDI inputs ({MidiDevices.Count} available)."
@@ -574,22 +708,34 @@ public sealed class MainWindowViewModel : ObservableObject
         _configuration.MinimizeToTray = MinimizeToTray;
         _configuration.CloseToTray = CloseToTray;
         _configuration.StartInTray = StartInTray;
-        await _settingsService.SaveAsync(_configuration);
+        await PersistAsync();
         Status = $"Tray behavior updated. Minimize: {(MinimizeToTray ? "tray" : "taskbar")}, Close: {(CloseToTray ? "tray" : "exit")}.";
     }
 
     private async Task SaveRunOnStartupAsync()
     {
-        _configuration.RunOnStartup = RunOnStartup;
-        await _startupService.SetEnabledAsync(RunOnStartup);
-        await _settingsService.SaveAsync(_configuration);
-        Status = RunOnStartup ? "Run on startup enabled." : "Run on startup disabled.";
+        var desired = RunOnStartup;
+        try
+        {
+            await _startupService.SetEnabledAsync(desired);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Run on startup change failed", ex);
+            RunOnStartup = !desired;
+            Status = $"Run on startup change failed: {ex.Message}";
+            return;
+        }
+
+        _configuration.RunOnStartup = desired;
+        await PersistAsync();
+        Status = desired ? "Run on startup enabled." : "Run on startup disabled.";
     }
 
     private async Task SaveNotificationSettingsAsync()
     {
         _configuration.NotificationsEnabled = NotificationsEnabled;
-        await _settingsService.SaveAsync(_configuration);
+        await PersistAsync();
         if (!NotificationsEnabled)
         {
             _osdService.Hide();
@@ -640,6 +786,7 @@ public sealed class MainWindowViewModel : ObservableObject
         var channelName = _audioManager.Channels.FirstOrDefault(channel => channel.Id == channelId)?.Name ?? channelId;
         _pendingMidiLearn = new PendingMidiLearn(channelId, command);
         _pendingKeyboardLearn = null;
+        UpdateKeyboardHookFilter();
         MidiStatus = command == MixerCommandKind.VolumeDelta
             ? $"Learning volume control for {channelName}. Move the knob now."
             : $"Learning mute button for {channelName}. Press the button now.";
@@ -668,6 +815,7 @@ public sealed class MainWindowViewModel : ObservableObject
         var channelName = _audioManager.Channels.FirstOrDefault(channel => channel.Id == channelId)?.Name ?? channelId;
         _pendingKeyboardLearn = new PendingKeyboardLearn(channelId, command);
         _pendingMidiLearn = null;
+        UpdateKeyboardHookFilter();
         var label = command switch
         {
             MixerCommandKind.ToggleMute => "mute key",
@@ -680,23 +828,45 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task ResetAssignmentsAsync()
     {
-        foreach (var channel in _configuration.Channels)
+        await _assignmentGate.WaitAsync();
+        try
         {
-            channel.AssignedProcesses.Clear();
-        }
-
-        foreach (var channel in _audioManager.Channels)
-        {
-            foreach (var process in channel.AssignedProcesses.ToList())
+            var affected = new List<string>();
+            foreach (var channel in _configuration.Channels)
             {
-                await _audioManager.RemoveProcessAssignmentAsync(process, channel.Id);
-            }
-        }
+                if (channel.AssignedProcesses.Count > 0)
+                {
+                    affected.Add(channel.Id);
+                }
 
-        await _settingsService.SaveAsync(_configuration);
-        await _audioManager.RefreshAsync();
-        RefreshActiveAudioApps(_audioManager.ActiveSessions);
-        Status = "All app assignments cleared.";
+                channel.AssignedProcesses.Clear();
+            }
+
+            _configuration.ProcessExecutablePaths.Clear();
+            RefreshChannelAssignmentsFromConfiguration(affected);
+
+            foreach (var channel in _audioManager.Channels)
+            {
+                foreach (var process in channel.AssignedProcesses.ToList())
+                {
+                    await _audioManager.RemoveProcessAssignmentAsync(process, channel.Id);
+                }
+            }
+
+            await PersistAsync();
+            await _audioManager.RefreshAsync();
+            RefreshActiveAudioApps(_audioManager.ActiveSessions);
+            Status = "All app assignments cleared.";
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write("Reset assignments failed", ex);
+            Status = $"Reset failed: {ex.Message}";
+        }
+        finally
+        {
+            _assignmentGate.Release();
+        }
     }
 
     private async Task ClearChannelBindingsAsync(object? parameter)
@@ -709,7 +879,8 @@ public sealed class MainWindowViewModel : ObservableObject
         _configuration.MidiBindings.RemoveAll(binding => binding.ChannelId == channelId);
         _configuration.KeyboardBindings.RemoveAll(binding => binding.ChannelId == channelId);
         _midiListener.UpdateBindings(_configuration.MidiBindings);
-        await _settingsService.SaveAsync(_configuration);
+        UpdateKeyboardHookFilter();
+        await PersistAsync();
         RefreshMidiBindingRows();
         MidiStatus = "Bindings cleared.";
     }
@@ -785,7 +956,7 @@ public sealed class MainWindowViewModel : ObservableObject
         });
 
         _midiListener.UpdateBindings(_configuration.MidiBindings);
-        await _settingsService.SaveAsync(_configuration);
+        await PersistAsync();
         RefreshMidiBindingRows();
 
         var channelName = _audioManager.Channels.FirstOrDefault(channel => channel.Id == channelId)?.Name ?? channelId;
@@ -832,7 +1003,8 @@ public sealed class MainWindowViewModel : ObservableObject
             Command = command
         });
 
-        await _settingsService.SaveAsync(_configuration);
+        UpdateKeyboardHookFilter();
+        await PersistAsync();
         RefreshMidiBindingRows();
 
         var channelName = _audioManager.Channels.FirstOrDefault(channel => channel.Id == channelId)?.Name ?? channelId;
@@ -841,6 +1013,47 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async void OnAppAssignmentChanged(ActiveAudioAppViewModel app, string? previousChannelId, string? channelId)
     {
+        // Serialized: rapid re-assignments must not interleave their config and audio mutations.
+        await _assignmentGate.WaitAsync();
+        try
+        {
+            await ApplyAssignmentAsync(app, previousChannelId, channelId);
+        }
+        catch (Exception ex)
+        {
+            ErrorLog.Write($"Assignment of {app.ProcessName} failed", ex);
+            Status = $"Assignment failed: {ex.Message}";
+        }
+        finally
+        {
+            _assignmentGate.Release();
+        }
+    }
+
+    private async Task ApplyAssignmentAsync(ActiveAudioAppViewModel app, string? previousChannelId, string? channelId)
+    {
+        var processName = app.ProcessName;
+        var targetId = string.IsNullOrWhiteSpace(channelId) ? null : channelId;
+        var target = targetId is null
+            ? null
+            : _configuration.Channels.FirstOrDefault(channel =>
+                channel.Role == AudioChannelRole.VirtualOutput &&
+                string.Equals(channel.Id, targetId, StringComparison.OrdinalIgnoreCase));
+
+        if (targetId is not null && target is null)
+        {
+            app.RestoreAssignment(previousChannelId);
+            Status = $"{app.DisplayName} could not be assigned: unknown channel.";
+            return;
+        }
+
+        if (target is not null && processName.StartsWith("pid-", StringComparison.OrdinalIgnoreCase))
+        {
+            app.RestoreAssignment(previousChannelId);
+            Status = $"{app.DisplayName} cannot be assigned: its process could not be identified.";
+            return;
+        }
+
         var affectedChannelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(previousChannelId))
         {
@@ -850,39 +1063,48 @@ public sealed class MainWindowViewModel : ObservableObject
         foreach (var channel in _configuration.Channels)
         {
             var removed = channel.AssignedProcesses.RemoveAll(candidate =>
-                string.Equals(candidate, app.ProcessName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(candidate, processName, StringComparison.OrdinalIgnoreCase));
             if (removed > 0)
             {
                 affectedChannelIds.Add(channel.Id);
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(channelId))
+        if (target is not null)
         {
-            var configChannel = _configuration.Channels.FirstOrDefault(channel =>
-                channel.Role == AudioChannelRole.VirtualOutput &&
-                string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
+            target.AssignedProcesses.Add(processName);
+            affectedChannelIds.Add(target.Id);
 
-            if (configChannel is not null)
+            var path = ProcessPresentationHelper.ResolveExecutablePath(processName);
+            if (!string.IsNullOrWhiteSpace(path))
             {
-                configChannel.AssignedProcesses.Add(app.ProcessName);
-                affectedChannelIds.Add(configChannel.Id);
-                await _audioManager.AssignProcessToChannelAsync(app.ProcessName, configChannel.Id);
-                Status = $"{app.DisplayName} assigned to {configChannel.Name}.";
+                _configuration.ProcessExecutablePaths[processName] = path;
             }
         }
         else
         {
-            if (!string.IsNullOrWhiteSpace(previousChannelId))
-            {
-                await _audioManager.RemoveProcessAssignmentAsync(app.ProcessName, previousChannelId);
-            }
-
-            Status = $"{app.DisplayName} unassigned.";
+            _configuration.ProcessExecutablePaths.Remove(processName);
         }
 
-        await _settingsService.SaveAsync(_configuration);
+        // Config is the source of truth: move the mixer icons right away, before slower audio work.
         RefreshChannelAssignmentsFromConfiguration(affectedChannelIds);
+        Status = target is not null
+            ? $"{app.DisplayName} assigned to {target.Name}."
+            : $"{app.DisplayName} unassigned.";
+
+        if (target is not null)
+        {
+            await _audioManager.AssignProcessToChannelAsync(processName, target.Id);
+        }
+        else
+        {
+            foreach (var affectedChannelId in affectedChannelIds)
+            {
+                await _audioManager.RemoveProcessAssignmentAsync(processName, affectedChannelId);
+            }
+        }
+
+        await PersistAsync();
     }
 
     private void RefreshChannelAssignmentsFromConfiguration(IEnumerable<string?> channelIds)
@@ -893,28 +1115,13 @@ public sealed class MainWindowViewModel : ObservableObject
                 string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
             var audioState = _audioManager.Channels.FirstOrDefault(channel =>
                 string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
-            var configChannel = _configuration.Channels.FirstOrDefault(channel =>
-                string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase));
 
-            if (viewModel is null || audioState is null || configChannel is null)
+            if (viewModel is null || audioState is null)
             {
                 continue;
             }
 
-            var mergedState = new AudioChannelState
-            {
-                Id = audioState.Id,
-                Name = audioState.Name,
-                Role = audioState.Role,
-                IconPath = audioState.IconPath,
-                Endpoint = audioState.Endpoint,
-                Volume = audioState.Volume,
-                IsMuted = audioState.IsMuted,
-                PeakValue = audioState.PeakValue
-            };
-
-            mergedState.AssignedProcesses.AddRange(configChannel.AssignedProcesses);
-            viewModel.Update(mergedState, updateVolume: !_volumeApplyCtsByChannel.ContainsKey(mergedState.Id));
+            ApplyChannelUpdate(audioState, "Assignments");
         }
     }
 
@@ -934,7 +1141,7 @@ public sealed class MainWindowViewModel : ObservableObject
             if (configChannel is not null)
             {
                 configChannel.EndpointId = endpointId;
-                await _settingsService.SaveAsync(_configuration);
+                await PersistAsync();
             }
 
             Status = $"{channel.Name} endpoint changed.";
@@ -971,7 +1178,7 @@ public sealed class MainWindowViewModel : ObservableObject
         await _audioManager.RenameChannelAsync(channel.Id, normalizedName);
         RebuildChannelOptionLists();
         RefreshMidiBindingRows();
-        await _settingsService.SaveAsync(_configuration);
+        await PersistAsync();
         Status = $"{normalizedName} renamed.";
     }
 
@@ -1015,13 +1222,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async void OnMidiControlChanged(object? sender, MidiControlChangeEventArgs e)
     {
-        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        if (!_dispatcher.CheckAccess())
         {
-            await WpfApplication.Current.Dispatcher.InvokeAsync(() => OnMidiControlChanged(sender, e));
+            await _dispatcher.InvokeAsync(() => OnMidiControlChanged(sender, e));
             return;
         }
-
-
 
         if (_pendingMidiLearn is { } pending &&
             (pending.Command == MixerCommandKind.VolumeDelta || pending.Command == MixerCommandKind.ToggleMute))
@@ -1043,35 +1248,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
         if (e.Command.Kind == MixerCommandKind.VolumeDelta)
         {
-            if (e.Delta == 0)
+            if (e.Delta != 0)
             {
-                return;
+                ApplyControllerVolumeStep(e.Command.ChannelId, e.Delta * VolumeStepPerTick);
             }
 
-            var normalizedDelta = e.Delta * VolumeStepPerTick;
-            var channelViewModel = Channels.FirstOrDefault(candidate => candidate.Id == e.Command.ChannelId);
-        if (channelViewModel is not null)
-        {
-            channelViewModel.SetVolumeFromController(Math.Clamp(channelViewModel.Volume + normalizedDelta, 0f, 1f));
-            QueueChannelVolumeApply(channelViewModel.Id, channelViewModel.Volume);
-
-                var configChannel = _configuration.Channels.FirstOrDefault(candidate => candidate.Id == channelViewModel.Id);
-                if (configChannel is not null)
-                {
-                    configChannel.Volume = channelViewModel.Volume;
-                    QueueConfigurationSave();
-                }
-
-                var channel = _audioManager.Channels.FirstOrDefault(candidate => candidate.Id == e.Command.ChannelId);
-                if (channel is not null)
-                {
-                    channel.Volume = channelViewModel.Volume;
-                    if (NotificationsEnabled)
-                    {
-                        _osdService.ShowVolumeChange(channel);
-                    }
-                }
-            }
             return;
         }
 
@@ -1083,34 +1264,20 @@ public sealed class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            RememberMicMuteSource(
+            await ToggleMuteFromInputAsync(
                 e.Command.ChannelId,
-                $"MIDI CC {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}");
-            await _audioManager.ToggleChannelMuteAsync(e.Command.ChannelId);
-            SyncMuteToConfiguration(e.Command.ChannelId);
-            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
-            if (channel is not null)
-            {
-                if (NotificationsEnabled)
-                {
-                    _osdService.ShowMuteChange(channel);
-                }
-            }
-            var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
-            var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
-            Status = muted ? $"{channelName} muted (MIDI)." : $"{channelName} unmuted (MIDI).";
+                $"MIDI CC {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}",
+                "MIDI");
         }
     }
 
     private async void OnMidiNoteChanged(object? sender, MidiNoteEventArgs e)
     {
-        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        if (!_dispatcher.CheckAccess())
         {
-            await WpfApplication.Current.Dispatcher.InvokeAsync(() => OnMidiNoteChanged(sender, e));
+            await _dispatcher.InvokeAsync(() => OnMidiNoteChanged(sender, e));
             return;
         }
-
-
 
         if (_pendingMidiLearn is { Command: MixerCommandKind.ToggleMute } pending)
         {
@@ -1132,23 +1299,67 @@ public sealed class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            RememberMicMuteSource(
+            await ToggleMuteFromInputAsync(
                 e.Command.ChannelId,
-                $"MIDI note {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}");
-            await _audioManager.ToggleChannelMuteAsync(e.Command.ChannelId);
-            SyncMuteToConfiguration(e.Command.ChannelId);
-            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId);
-            if (channel is not null)
-            {
-                if (NotificationsEnabled)
-                {
-                    _osdService.ShowMuteChange(channel);
-                }
-            }
-            var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.Name ?? e.Command.ChannelId;
-            var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == e.Command.ChannelId)?.IsMuted ?? false;
-            Status = muted ? $"{channelName} muted (MIDI note)." : $"{channelName} unmuted (MIDI note).";
+                $"MIDI note {e.Identity.ControllerOrNote} / Ch {e.Identity.MidiChannel}",
+                "MIDI note");
         }
+    }
+
+    private async Task ToggleMuteFromInputAsync(string channelId, string source, string statusSuffix)
+    {
+        RememberMicMuteSource(channelId, source);
+        await _audioManager.ToggleChannelMuteAsync(channelId);
+        SyncMuteToConfiguration(channelId);
+
+        var channel = _audioManager.Channels.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, channelId, StringComparison.OrdinalIgnoreCase));
+        if (channel is null)
+        {
+            return;
+        }
+
+        if (NotificationsEnabled)
+        {
+            _osdService.ShowMuteChange(channel);
+        }
+
+        Status = channel.IsMuted ? $"{channel.Name} muted ({statusSuffix})." : $"{channel.Name} unmuted ({statusSuffix}).";
+    }
+
+    private void ApplyControllerVolumeStep(string channelId, float delta)
+    {
+        var channelViewModel = Channels.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, channelId, StringComparison.OrdinalIgnoreCase));
+        if (channelViewModel is null)
+        {
+            return;
+        }
+
+        channelViewModel.SetVolumeFromController(Math.Clamp(channelViewModel.Volume + delta, 0f, 1f));
+        QueueChannelVolumeApply(channelViewModel.Id, channelViewModel.Volume);
+
+        var configChannel = _configuration.Channels.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, channelViewModel.Id, StringComparison.OrdinalIgnoreCase));
+        if (configChannel is not null)
+        {
+            configChannel.Volume = channelViewModel.Volume;
+            QueueConfigurationSave();
+        }
+
+        var channel = _audioManager.Channels.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, channelId, StringComparison.OrdinalIgnoreCase));
+        if (channel is not null && NotificationsEnabled)
+        {
+            channel.Volume = channelViewModel.Volume;
+            _osdService.ShowVolumeChange(channel);
+        }
+    }
+
+    private void UpdateKeyboardHookFilter()
+    {
+        _keyboardHook.UpdateBoundKeys(_configuration.KeyboardBindings.Select(binding => binding.VirtualKey).ToArray());
+        _keyboardHook.CaptureAllKeys = _pendingKeyboardLearn is not null;
     }
 
     private bool CanToggleCcMute(MidiMessageIdentity identity)
@@ -1214,15 +1425,21 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async void OnKeyboardKeyPressed(object? sender, KeyboardKeyEventArgs e)
     {
-        if (!WpfApplication.Current.Dispatcher.CheckAccess())
+        if (!_dispatcher.CheckAccess())
         {
-            await WpfApplication.Current.Dispatcher.InvokeAsync(() => OnKeyboardKeyPressed(sender, e));
+            await _dispatcher.InvokeAsync(() => OnKeyboardKeyPressed(sender, e));
             return;
         }
 
         if (_pendingKeyboardLearn is { } pending)
         {
+            if (e.IsRepeat)
+            {
+                return;
+            }
+
             _pendingKeyboardLearn = null;
+            UpdateKeyboardHookFilter();
             await SaveKeyboardBindingAsync(e, pending.ChannelId, pending.Command);
             return;
         }
@@ -1235,76 +1452,111 @@ public sealed class MainWindowViewModel : ObservableObject
             return;
         }
 
-        if (!CanToggleKeyboardMute(e.VirtualKey))
-        {
-            return;
-        }
-
         if (binding.Command == MixerCommandKind.ToggleMute)
         {
-            RememberMicMuteSource(binding.ChannelId, $"Keyboard {e.KeyName}");
-            await _audioManager.ToggleChannelMuteAsync(binding.ChannelId);
-            SyncMuteToConfiguration(binding.ChannelId);
-            var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
-            if (channel is not null)
+            // Auto-repeat of a held key must not flip mute back and forth.
+            if (e.IsRepeat || !CanToggleKeyboardMute(e.VirtualKey))
             {
-                if (NotificationsEnabled)
-                {
-                    _osdService.ShowMuteChange(channel);
-                }
+                return;
             }
-            var channelName = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.Name ?? binding.ChannelId;
-            var muted = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId)?.IsMuted ?? false;
-            Status = muted ? $"{channelName} muted ({e.KeyName})." : $"{channelName} unmuted ({e.KeyName}).";
+
+            await ToggleMuteFromInputAsync(binding.ChannelId, $"Keyboard {e.KeyName}", e.KeyName);
             return;
         }
 
         if (binding.Command is MixerCommandKind.VolumeUp or MixerCommandKind.VolumeDown)
         {
-            var step = binding.Command == MixerCommandKind.VolumeUp ? 0.05f : -0.05f;
-            var channelViewModel = Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
-            if (channelViewModel is not null)
+            var magnitude = e.IsRepeat ? 0.02f : 0.05f;
+            var step = binding.Command == MixerCommandKind.VolumeUp ? magnitude : -magnitude;
+            ApplyControllerVolumeStep(binding.ChannelId, step);
+
+            var channelName = Channels.FirstOrDefault(c => string.Equals(c.Id, binding.ChannelId, StringComparison.OrdinalIgnoreCase))?.Name;
+            if (channelName is not null)
             {
-                channelViewModel.SetVolumeFromController(Math.Clamp(channelViewModel.Volume + step, 0f, 1f));
-                QueueChannelVolumeApply(channelViewModel.Id, channelViewModel.Volume);
-
-                var configChannel = _configuration.Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
-                if (configChannel is not null)
-                {
-                    configChannel.Volume = channelViewModel.Volume;
-                    QueueConfigurationSave();
-                }
-
-                var channel = _audioManager.Channels.FirstOrDefault(c => c.Id == binding.ChannelId);
-                if (channel is not null)
-                {
-                    channel.Volume = channelViewModel.Volume;
-                    if (NotificationsEnabled)
-                    {
-                        _osdService.ShowVolumeChange(channel);
-                    }
-                }
-
                 var direction = binding.Command == MixerCommandKind.VolumeUp ? "up" : "down";
-                Status = $"{channelViewModel.Name} volume {direction} ({e.KeyName}).";
+                Status = $"{channelName} volume {direction} ({e.KeyName}).";
             }
-            return;
         }
     }
 
     private void OnAudioChannelChanged(object? sender, AudioChannelChangedEventArgs e)
     {
-        WpfApplication.Current.Dispatcher.Invoke(() =>
+        // Audio threads publish ~10 events per second per channel; keep only the newest state per channel.
+        _pendingChannelUpdates.AddOrUpdate(
+            e.Channel.Id,
+            _ => (e.Channel, e.Reason),
+            (_, existing) => (e.Channel, e.Reason == "PeakRefresh" && existing.Reason != "PeakRefresh" ? existing.Reason : e.Reason));
+
+        if (Interlocked.Exchange(ref _channelFlushQueued, 1) == 0)
         {
-            var viewModel = Channels.FirstOrDefault(channel => channel.Id == e.Channel.Id);
-            viewModel?.Update(e.Channel, updateVolume: !_volumeApplyCtsByChannel.ContainsKey(e.Channel.Id));
-            ReportMicMuteTransition(e.Channel, e.Reason);
-        });
+            BeginInvokeOnUi(FlushChannelUpdates, DispatcherPriority.Render);
+        }
+    }
+
+    private void FlushChannelUpdates()
+    {
+        Volatile.Write(ref _channelFlushQueued, 0);
+        foreach (var channelId in _pendingChannelUpdates.Keys.ToList())
+        {
+            if (_pendingChannelUpdates.TryRemove(channelId, out var update))
+            {
+                ApplyChannelUpdate(update.State, update.Reason);
+            }
+        }
+    }
+
+    private void ApplyChannelUpdate(AudioChannelState state, string reason)
+    {
+        var configChannel = _configuration.Channels.FirstOrDefault(channel =>
+            string.Equals(channel.Id, state.Id, StringComparison.OrdinalIgnoreCase));
+
+        // Assignments come from configuration only, so a late audio snapshot cannot revert them.
+        if (state.Role == AudioChannelRole.VirtualOutput && configChannel is not null)
+        {
+            state.AssignedProcesses.Clear();
+            state.AssignedProcesses.AddRange(configChannel.AssignedProcesses);
+        }
+
+        var viewModel = Channels.FirstOrDefault(channel =>
+            string.Equals(channel.Id, state.Id, StringComparison.OrdinalIgnoreCase));
+        viewModel?.Update(state, updateVolume: !_volumeApplyCtsByChannel.ContainsKey(state.Id));
+
+        if (reason is "EndpointMuteObserved" or "EndpointVolumeObserved" or "DefaultEndpoint")
+        {
+            SyncEndpointStateToConfiguration(state);
+        }
+
+        ReportMicMuteTransition(state, reason);
     }
 
     private void OnActiveSessionsChanged(object? sender, ActiveAudioSessionsChangedEventArgs e)
     {
-        WpfApplication.Current.Dispatcher.Invoke(() => RefreshActiveAudioApps(e.Sessions));
+        Volatile.Write(ref _pendingSessions, e.Sessions);
+        if (Interlocked.Exchange(ref _sessionFlushQueued, 1) == 0)
+        {
+            BeginInvokeOnUi(FlushActiveSessions, DispatcherPriority.Background);
+        }
+    }
+
+    private void FlushActiveSessions()
+    {
+        Volatile.Write(ref _sessionFlushQueued, 0);
+        var sessions = Interlocked.Exchange(ref _pendingSessions, null);
+        if (sessions is not null)
+        {
+            RefreshActiveAudioApps(sessions);
+        }
+    }
+
+    private void BeginInvokeOnUi(Action action, DispatcherPriority priority)
+    {
+        var dispatcher = WpfApplication.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
+        {
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(action, priority);
     }
 
     private void RefreshActiveAudioApps(IReadOnlyList<ActiveAudioSessionInfo> sessions)
@@ -1324,7 +1576,7 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             var existing = ActiveAudioApps.FirstOrDefault(app =>
                 string.Equals(app.ProcessName, session.ProcessName, StringComparison.OrdinalIgnoreCase));
-            var assignedChannelId = ResolveAssignedChannelId(session.ProcessName) ?? session.AssignedChannelId;
+            var assignedChannelId = ResolveAssignedChannelId(session.ProcessName);
             var viewModelSession = session with { AssignedChannelId = assignedChannelId };
 
             if (existing is not null)
@@ -1401,16 +1653,9 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void OnAudioFaulted(object? sender, AudioFaultEventArgs args)
     {
-        if (!WpfApplication.Current.Dispatcher.CheckAccess())
-        {
-            WpfApplication.Current.Dispatcher.Invoke(() => OnAudioFaulted(sender, args));
-            return;
-        }
-
-        Status = args.Message;
+        ErrorLog.Write($"Audio fault: {args.Message}", args.Exception);
+        BeginInvokeOnUi(() => Status = args.Message, DispatcherPriority.Background);
     }
-
-
 
     private void SyncVolumeToConfiguration(string channelId)
     {
@@ -1442,27 +1687,48 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void QueueConfigurationSave()
     {
-        _configurationSaveCts?.Cancel();
-        _configurationSaveCts?.Dispose();
-        _configurationSaveCts = new CancellationTokenSource();
-        var token = _configurationSaveCts.Token;
+        if (!_dispatcher.CheckAccess())
+        {
+            _ = _dispatcher.BeginInvoke(QueueConfigurationSave);
+            return;
+        }
 
-        _ = SaveConfigurationAfterDelayAsync(token);
+        // Restarting the timer coalesces bursts (knob turns) into a single write.
+        _saveTimer.Interval = SaveDebounce;
+        _saveTimer.Stop();
+        _saveTimer.Start();
     }
 
-    private async Task SaveConfigurationAfterDelayAsync(CancellationToken token)
+    private async void OnSaveTimerTick(object? sender, EventArgs e)
     {
+        await PersistAsync();
+    }
+
+    /// <summary>
+    /// Writes the configuration now. Never throws: failures are surfaced in the status bar and retried with backoff.
+    /// </summary>
+    private async Task<bool> PersistAsync()
+    {
+        _saveTimer.Stop();
+        if (!_configurationLoaded)
+        {
+            return false;
+        }
+
         try
         {
-            await Task.Delay(500, token);
-            await _settingsService.SaveAsync(_configuration, token);
-        }
-        catch (OperationCanceledException)
-        {
+            await _settingsService.SaveAsync(_configuration);
+            _saveFailures = 0;
+            return true;
         }
         catch (Exception ex)
         {
+            ErrorLog.Write("Settings save failed", ex);
             Status = $"Settings save failed: {ex.Message}";
+            _saveFailures++;
+            _saveTimer.Interval = TimeSpan.FromMilliseconds(Math.Min(30000, 1000 * Math.Pow(2, Math.Min(_saveFailures, 5))));
+            _saveTimer.Start();
+            return false;
         }
     }
 
@@ -1496,7 +1762,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 }
                 else
                 {
-                    dispatcher.Invoke(() =>
+                    _ = dispatcher.BeginInvoke(() =>
                     {
                         try
                         {

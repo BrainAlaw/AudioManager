@@ -8,6 +8,8 @@ public sealed class RegistryStartupService : IStartupService
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "AudioManager";
 
+    public const string StartupArgument = "--startup";
+
     public bool IsEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
@@ -27,7 +29,7 @@ public sealed class RegistryStartupService : IStartupService
             var exePath = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Unable to resolve process path.");
 
-            key.SetValue(ValueName, $"\"{exePath}\"", RegistryValueKind.String);
+            key.SetValue(ValueName, $"\"{exePath}\" {StartupArgument}", RegistryValueKind.String);
         }
         else
         {

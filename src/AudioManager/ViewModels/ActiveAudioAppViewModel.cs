@@ -25,7 +25,7 @@ public sealed class ActiveAudioAppViewModel : ObservableObject
         _displayName = session.DisplayName;
         _endpointName = session.EndpointName;
         _peakValue = session.PeakValue;
-        _selectedChannelId = session.AssignedChannelId;
+        _selectedChannelId = session.AssignedChannelId ?? string.Empty;
         _isAssignmentEditorOpen = string.IsNullOrWhiteSpace(session.AssignedChannelId);
         _isActive = true;
         _icon = ProcessPresentationHelper.GetProcessIcon(session.ProcessName);
@@ -94,6 +94,14 @@ public sealed class ActiveAudioAppViewModel : ObservableObject
         get => _selectedChannelId;
         set
         {
+            // ComboBox pushes null while its item list is rebuilt; only an explicit empty id means "unassign".
+            if (value is null)
+            {
+                OnPropertyChanged(nameof(SelectedChannelId));
+                OnPropertyChanged(nameof(AssignedChannelId));
+                return;
+            }
+
             var previousChannelId = _selectedChannelId;
             if (!SetProperty(ref _selectedChannelId, value))
             {
@@ -132,8 +140,11 @@ public sealed class ActiveAudioAppViewModel : ObservableObject
         OnPropertyChanged(nameof(IsChannelPickerVisible));
     }
 
+    public void RestoreAssignment(string? channelId) => SetSelectedChannelIdFromModel(channelId);
+
     private void SetSelectedChannelIdFromModel(string? value)
     {
+        value ??= string.Empty;
         if (_selectedChannelId == value)
         {
             return;

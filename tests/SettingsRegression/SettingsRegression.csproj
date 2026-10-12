@@ -9,5 +9,6 @@
     <Compile Include="../../src/AudioManager/Models/*.cs" Link="Models/%(Filename)%(Extension)" />
     <Compile Include="../../src/AudioManager/Contracts/ISettingsService.cs" Link="ISettingsService.cs" />
     <Compile Include="../../src/AudioManager/Services/Settings/JsonSettingsService.cs" Link="JsonSettingsService.cs" />
+    <Compile Include="../../src/AudioManager/Services/Settings/ConfigurationNormalizer.cs" Link="ConfigurationNormalizer.cs" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.4 - 2026-10-12
+
+### Fixed
+
+- Settings: the configuration is snapshotted before writing, so UI changes can no longer corrupt a save in progress; overlapping saves can no longer write an older state over a newer one; saves retry when the file is briefly locked.
+- Settings: pending changes are flushed synchronously on exit and on Windows logoff/shutdown; a failed startup load never overwrites the real settings file.
+- Settings: configuration is validated on load (unique channels, one owning channel per app, valid MIDI/keyboard bindings, NaN volumes, legacy files without a schema version, case-insensitive executable paths).
+- Settings: save failures no longer crash the app; they are shown in the status bar, retried with backoff and written to `%APPDATA%\AudioManager\error.log`.
+- Assignments: apps are now re-attached to their channel automatically when they start or restart, without pressing Refresh.
+- Assignments: unassigning an app restores its volume and mute state; rapid re-assignments are serialized; transient empty selections no longer silently unassign an app; the configuration is the single source of truth, so the Apps list can no longer show a stale channel.
+- Assignments: audio state changes are published as snapshots and all assignment data is accessed under a lock (previously a race with the meter watcher).
+- Master and microphone now mirror the Windows endpoint state at startup and follow external volume/mute changes, instead of overwriting them with stored values.
+- Run on startup: the Windows autostart entry is reconciled with the setting, failures roll the toggle back, and only autostart launches hide to the tray (manual launches show the window).
+- A second launch now activates the running instance instead of starting a duplicate (duplicate keyboard hooks, competing settings writers).
+- The tray icon is removed on a normal window close.
+- MIDI: bindings are snapshotted for the MIDI thread, encoder state is locked, a device is re-found by name when Windows renumbers MIDI inputs, and the selected device is only saved when it changes.
+
+### Performance
+
+- Mixer strips no longer rebuild app icons on every meter update (the main source of UI lag); icons and friendly names are cached, process handles are released.
+- Audio events are coalesced to the newest state per channel and no longer block the audio thread on the UI thread.
+- Keyboard hook only forwards bound keys to the app; held volume keys repeat smoothly and held mute keys no longer flicker.
+- Repeated identical audio faults are throttled.
+
 ## 1.0.3 - 2026-09-27
 
 ### Fixed

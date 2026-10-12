@@ -33,6 +33,7 @@ public partial class MainWindow : Window
 
         StateChanged += OnWindowStateChanged;
         Closing += OnWindowClosing;
+        Closed += (_, _) => DisposeNotifyIcon();
     }
 
 
@@ -94,8 +95,6 @@ public partial class MainWindow : Window
     {
         if (_allowClose)
         {
-            _notifyIcon.Visible = false;
-            _notifyIcon.Dispose();
             return;
         }
 
@@ -120,7 +119,14 @@ public partial class MainWindow : Window
         UpdateShellVisibilityState();
     }
 
-    private void RestoreFromTray()
+    private void DisposeNotifyIcon()
+    {
+        // Regular close (not close-to-tray) also ends here, otherwise a ghost icon lingers in the tray.
+        _notifyIcon.Visible = false;
+        _notifyIcon.Dispose();
+    }
+
+    internal void RestoreFromTray()
     {
         Show();
         ShowInTaskbar = true;

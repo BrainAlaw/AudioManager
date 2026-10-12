@@ -2,7 +2,11 @@ namespace AudioManager.Models;
 
 public sealed class MixerConfiguration
 {
-    public int SchemaVersion { get; set; } = 6;
+    public const int CurrentSchemaVersion = 7;
+
+    private Dictionary<string, string> _processExecutablePaths = new(StringComparer.OrdinalIgnoreCase);
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
     public bool RunOnStartup { get; set; }
 
@@ -26,7 +30,29 @@ public sealed class MixerConfiguration
 
     public List<KeyboardBinding> KeyboardBindings { get; set; } = [];
 
-    public Dictionary<string, string> ProcessExecutablePaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Always case-insensitive, even after deserialization replaces the instance.
+    /// </summary>
+    public Dictionary<string, string> ProcessExecutablePaths
+    {
+        get => _processExecutablePaths;
+        set
+        {
+            var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (value is not null)
+            {
+                foreach (var (key, path) in value)
+                {
+                    if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(path))
+                    {
+                        normalized[key] = path;
+                    }
+                }
+            }
+
+            _processExecutablePaths = normalized;
+        }
+    }
 
     public static List<AudioChannelConfig> CreateDefaultChannels()
     {

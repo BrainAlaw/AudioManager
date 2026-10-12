@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -9,10 +10,19 @@ using AudioManager.Services;
 
 namespace AudioManager.Services.Audio;
 
-public sealed class CoreAudioManager : ICoreAudioManager
+public sealed class CoreAudioManager : ICoreAudioManager, IDisposable
 {
+    private static readonly TimeSpan SessionRefreshInterval = TimeSpan.FromSeconds(2);
+    private const long RecentSetGraceMilliseconds = 500;
+    private const long FaultThrottleMilliseconds = 5000;
+
     private readonly object _gate = new();
     private readonly object _microphoneMeterGate = new();
+    private readonly object _refreshLock = new();
+    private readonly ConcurrentDictionary<string, long> _recentSetTicks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, long> _faultTicks = new(StringComparer.OrdinalIgnoreCase);
+    private string _lastPublishedSessionSignature = string.Empty;
+    private bool _disposed;
     private readonly List<AudioChannelState> _channels = [];
     private readonly Dictionary<string, string> _processAssignments = new(StringComparer.OrdinalIgnoreCase);
     private readonly MMDeviceEnumerator _deviceEnumerator = new();
@@ -37,7 +47,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         {
             lock (_gate)
             {
-                return _channels.ToList();
+                return _channels.Select(Snapshot).ToList();
             }
         }
     }
@@ -79,7 +89,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
             }
             catch (Exception ex)
             {
-                Faulted?.Invoke(this, new AudioFaultEventArgs
+                PublishFault(new AudioFaultEventArgs
                 {
                     Message = $"Unable to enumerate {kind} audio endpoints.",
                     Exception = ex
@@ -140,7 +150,12 @@ public sealed class CoreAudioManager : ICoreAudioManager
             }
         }
 
-        ApplyAllChannelOutputs();
+        // Windows owns master and microphone state; adopt it instead of overwriting it with stale settings.
+        foreach (var endpointChannel in GetEndpointChannels())
+        {
+            AdoptEndpointState(endpointChannel);
+        }
+
         RestartMicrophoneMeter();
         await RefreshAsync(cancellationToken);
     }
@@ -150,7 +165,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         await Task.Run(() =>
         {
             Measure("RefreshPeaks", () => RefreshPeaks(cancellationToken));
-            Measure("RefreshActiveSessions", () => RefreshActiveSessions(cancellationToken));
+            Measure("RefreshActiveSessions", () => RefreshActiveSessions(cancellationToken, forcePublish: true));
         }, cancellationToken);
     }
 
@@ -163,6 +178,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
             return Task.CompletedTask;
         }
 
+        MarkRecentlySet(channel.Id);
         channel.Volume = Clamp01(normalizedVolume);
         MarkAssignedSessionLevelsDirty(channel);
         ApplyChannelOutput(channel);
@@ -191,6 +207,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
             return Task.CompletedTask;
         }
 
+        MarkRecentlySet(channel.Id);
         channel.IsMuted = isMuted;
         MarkAssignedSessionLevelsDirty(channel);
         ApplyChannelOutput(channel);
@@ -232,7 +249,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
         if (endpoint is null)
         {
-            Faulted?.Invoke(this, new AudioFaultEventArgs
+            PublishFault(new AudioFaultEventArgs
             {
                 ChannelId = channelId,
                 Message = $"Endpoint '{endpointId}' was not found for {channel.Name}."
@@ -258,7 +275,11 @@ public sealed class CoreAudioManager : ICoreAudioManager
             return Task.CompletedTask;
         }
 
-        channel.Name = name;
+        lock (_gate)
+        {
+            channel.Name = name;
+        }
+
         PublishChanged(channel, "Name");
         return Task.CompletedTask;
     }
@@ -275,14 +296,18 @@ public sealed class CoreAudioManager : ICoreAudioManager
             return Task.CompletedTask;
         }
 
-        RemoveProcessFromAllChannels(processName);
-
-        if (!channel.AssignedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase))
+        var previousOwners = RemoveProcessFromAllChannels(processName);
+        lock (_gate)
         {
             channel.AssignedProcesses.Add(processName);
+            _processAssignments[processName] = channel.Id;
         }
 
-        _processAssignments[processName] = channelId;
+        foreach (var previousOwner in previousOwners.Where(owner => !ReferenceEquals(owner, channel)))
+        {
+            PublishChanged(previousOwner, "ProcessRemoved");
+        }
+
         MarkAssignedSessionLevelsDirty(channel);
         ApplyChannelOutput(channel);
         PublishChanged(channel, "ProcessAssigned");
@@ -295,17 +320,23 @@ public sealed class CoreAudioManager : ICoreAudioManager
         CancellationToken cancellationToken = default)
     {
         var channel = FindChannel(channelId);
-        if (channel is not null)
+        lock (_gate)
         {
-            channel.AssignedProcesses.RemoveAll(name => string.Equals(name, processName, StringComparison.OrdinalIgnoreCase));
-            MarkAssignedSessionLevelsDirty(channel);
-            PublishChanged(channel, "ProcessRemoved");
+            channel?.AssignedProcesses.RemoveAll(name => string.Equals(name, processName, StringComparison.OrdinalIgnoreCase));
+            if (_processAssignments.TryGetValue(processName, out var assignedChannelId) &&
+                string.Equals(assignedChannelId, channelId, StringComparison.OrdinalIgnoreCase))
+            {
+                _processAssignments.Remove(processName);
+            }
         }
 
-        if (_processAssignments.TryGetValue(processName, out var assignedChannelId) &&
-            string.Equals(assignedChannelId, channelId, StringComparison.OrdinalIgnoreCase))
+        // An unassigned app must not stay muted or attenuated by its former channel.
+        ResetProcessSessions(processName);
+
+        if (channel is not null)
         {
-            _processAssignments.Remove(processName);
+            MarkAssignedSessionLevelsDirty(channel);
+            PublishChanged(channel, "ProcessRemoved");
         }
 
         return RefreshAsync(cancellationToken);
@@ -328,20 +359,26 @@ public sealed class CoreAudioManager : ICoreAudioManager
             return Task.CompletedTask;
         }
 
-        _watcherCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _watcherCts = watcherCts;
         _meterWatcherTask = Task.Run(async () =>
         {
-            while (!_watcherCts.IsCancellationRequested)
+            var sessionRefreshWatch = Stopwatch.StartNew();
+            while (!watcherCts.IsCancellationRequested)
             {
                 try
                 {
-                    if (_isUiActive)
+                    Measure("PeakWatcher", () => RefreshPeaks(watcherCts.Token));
+
+                    // New audio sessions (restarted apps) must receive their channel level without a manual refresh.
+                    if (sessionRefreshWatch.Elapsed >= SessionRefreshInterval)
                     {
-                        Measure("PeakWatcher", () => RefreshPeaks(_watcherCts.Token));
+                        sessionRefreshWatch.Restart();
+                        Measure("SessionWatcher", () => RefreshActiveSessions(watcherCts.Token, forcePublish: false));
                     }
 
                     var meterDelay = _isUiActive ? 100 : 1000;
-                    await Task.Delay(TimeSpan.FromMilliseconds(meterDelay), _watcherCts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(meterDelay), watcherCts.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -349,15 +386,15 @@ public sealed class CoreAudioManager : ICoreAudioManager
                 }
                 catch (Exception ex)
                 {
-                    Faulted?.Invoke(this, new AudioFaultEventArgs
+                    PublishFault(new AudioFaultEventArgs
                     {
                         Message = "Peak meter watcher failed; it will retry.",
                         Exception = ex
                     });
-                    await Task.Delay(TimeSpan.FromSeconds(1), _watcherCts.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), watcherCts.Token);
                 }
             }
-        }, _watcherCts.Token);
+        }, watcherCts.Token);
 
         return Task.CompletedTask;
     }
@@ -383,11 +420,23 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
     public async ValueTask DisposeAsync()
     {
-        await StopSessionWatcherAsync();
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await StopSessionWatcherAsync().ConfigureAwait(false);
         StopMicrophoneMeter();
         DisposeCachedRenderSessions(SwapCachedRenderSessions([]));
         _watcherCts?.Dispose();
         _deviceEnumerator.Dispose();
+    }
+
+    public void Dispose()
+    {
+        // Container teardown path; DisposeAsync is idempotent so a prior async shutdown makes this a no-op.
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     private void SyncMasterEndpoint()
@@ -411,18 +460,13 @@ public sealed class CoreAudioManager : ICoreAudioManager
             if (!string.Equals(master.Endpoint?.Id, endpoint.Id, StringComparison.OrdinalIgnoreCase))
             {
                 master.Endpoint = endpoint;
-                ApplyEndpointVolume(master);
-                if (master.IsMuted)
-                {
-                    ApplyEndpointMute(master);
-                }
-
+                AdoptEndpointState(master);
                 PublishChanged(master, "DefaultEndpoint");
             }
         }
         catch (Exception ex)
         {
-            Faulted?.Invoke(this, new AudioFaultEventArgs
+            PublishFault(new AudioFaultEventArgs
             {
                 ChannelId = master.Id,
                 Message = "Unable to resolve the Windows default audio output.",
@@ -452,8 +496,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
             if (!string.Equals(mic.Endpoint?.Id, endpoint.Id, StringComparison.OrdinalIgnoreCase))
             {
                 mic.Endpoint = endpoint;
-                ApplyEndpointVolume(mic);
-                ApplyEndpointMute(mic);
+                AdoptEndpointState(mic);
                 RestartMicrophoneMeter();
 
                 PublishChanged(mic, "DefaultEndpoint");
@@ -461,7 +504,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         }
         catch (Exception ex)
         {
-            Faulted?.Invoke(this, new AudioFaultEventArgs
+            PublishFault(new AudioFaultEventArgs
             {
                 ChannelId = mic.Id,
                 Message = "Unable to resolve the Windows default audio input.",
@@ -478,46 +521,49 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
         if (channel.Role == AudioChannelRole.Master || channel.Role == AudioChannelRole.Microphone)
         {
-            if (channel.Endpoint is not null)
+            if (channel.Endpoint is null)
             {
-                try
+                return;
+            }
+
+            var endpointId = channel.Endpoint.Id;
+            try
+            {
+                // MMDevice RCWs are apartment-bound; open and release the device within this call.
+                using var device = _deviceEnumerator.GetDevice(endpointId);
+                var endpointVolume = device.AudioEndpointVolume;
+
+                // Skip observation right after our own write: the endpoint may not reflect it yet.
+                if (!IsRecentlySet(channel.Id))
                 {
-                    using var device = _deviceEnumerator.GetDevice(channel.Endpoint.Id);
-                    var endpointMuted = device.AudioEndpointVolume.Mute;
+                    var endpointMuted = endpointVolume.Mute;
                     if (channel.IsMuted != endpointMuted)
                     {
                         channel.IsMuted = endpointMuted;
                         PublishChanged(channel, "EndpointMuteObserved");
                     }
 
-                    channel.PeakValue = channel.Role == AudioChannelRole.Microphone
-                        ? GetMicrophonePeak(device)
-                        : device.AudioMeterInformation.MasterPeakValue;
+                    var endpointScalar = endpointVolume.MasterVolumeLevelScalar;
+                    if (Math.Abs(endpointScalar - channel.Volume) > 0.005f)
+                    {
+                        channel.Volume = Clamp01(endpointScalar);
+                        PublishChanged(channel, "EndpointVolumeObserved");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    PublishEndpointFault(channel, "refresh peak", ex);
-                }
+
+                channel.PeakValue = channel.Role == AudioChannelRole.Microphone
+                    ? GetMicrophonePeak(device)
+                    : device.AudioMeterInformation.MasterPeakValue;
+            }
+            catch (Exception ex)
+            {
+                PublishEndpointFault(channel, "refresh peak", ex);
             }
 
             return;
         }
 
-        if (channel.Endpoint is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using var device = _deviceEnumerator.GetDevice(channel.Endpoint.Id);
-            var sessionPeak = GetAssignedProcessesPeak(channel, sessionPeaksByProcess);
-            channel.PeakValue = sessionPeak;
-        }
-        catch (Exception ex)
-        {
-            PublishEndpointFault(channel, "refresh endpoint peak", ex);
-        }
+        channel.PeakValue = GetAssignedProcessesPeak(channel, sessionPeaksByProcess);
     }
 
     private void RefreshPeaks(CancellationToken cancellationToken)
@@ -539,38 +585,46 @@ public sealed class CoreAudioManager : ICoreAudioManager
             var oldPeak = channel.PeakValue;
             RefreshChannel(channel, sessionPeaksByProcess);
 
-            if (Math.Abs(oldPeak - channel.PeakValue) > 0.001f)
+            if (_isUiActive && Math.Abs(oldPeak - channel.PeakValue) > 0.001f)
             {
-                ChannelChanged?.Invoke(this, new AudioChannelChangedEventArgs
-                {
-                    Channel = channel,
-                    Reason = "PeakRefresh"
-                });
+                PublishChanged(channel, "PeakRefresh");
             }
         }
     }
 
-    private void RefreshActiveSessions(CancellationToken cancellationToken)
+    private void RefreshActiveSessions(CancellationToken cancellationToken, bool forcePublish)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        SyncMasterEndpoint();
-        SyncMicrophoneEndpoint();
-
-        var cacheChanged = Measure("RefreshRenderSessionCache", () => RefreshRenderSessionCache());
-        IReadOnlyList<ActiveAudioSessionInfo> activeSessions;
-        lock (_gate)
+        lock (_refreshLock)
         {
-            activeSessions = _activeSessions;
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            SyncMasterEndpoint();
+            SyncMicrophoneEndpoint();
 
-        ActiveSessionsChanged?.Invoke(this, new ActiveAudioSessionsChangedEventArgs
-        {
-            Sessions = activeSessions
-        });
+            var cacheChanged = Measure("RefreshRenderSessionCache", () => RefreshRenderSessionCache());
+            IReadOnlyList<ActiveAudioSessionInfo> activeSessions;
+            lock (_gate)
+            {
+                activeSessions = _activeSessions;
+            }
 
-        if (cacheChanged || ShouldApplyAssignedSessionLevels())
-        {
-            ApplyAllAssignedSessionLevels();
+            var signature = string.Join(
+                '\n',
+                activeSessions.Select(session =>
+                    $"{session.ProcessName}|{session.EndpointId}|{session.DisplayName}|{session.AssignedChannelId}"));
+
+            if (forcePublish || cacheChanged || !string.Equals(signature, _lastPublishedSessionSignature, StringComparison.Ordinal))
+            {
+                _lastPublishedSessionSignature = signature;
+                ActiveSessionsChanged?.Invoke(this, new ActiveAudioSessionsChangedEventArgs
+                {
+                    Sessions = activeSessions
+                });
+            }
+
+            if (cacheChanged || ShouldApplyAssignedSessionLevels())
+            {
+                ApplyAllAssignedSessionLevels();
+            }
         }
     }
 
@@ -578,7 +632,13 @@ public sealed class CoreAudioManager : ICoreAudioManager
         AudioChannelState channel,
         IReadOnlyDictionary<string, float>? sessionPeaksByProcess = null)
     {
-        if (channel.AssignedProcesses.Count == 0)
+        string[] assignedProcesses;
+        lock (_gate)
+        {
+            assignedProcesses = channel.AssignedProcesses.ToArray();
+        }
+
+        if (assignedProcesses.Length == 0)
         {
             return 0f;
         }
@@ -586,7 +646,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         if (sessionPeaksByProcess is not null)
         {
             var peakFromCache = 0f;
-            foreach (var processName in channel.AssignedProcesses)
+            foreach (var processName in assignedProcesses)
             {
                 if (sessionPeaksByProcess.TryGetValue(processName, out var processPeak) &&
                     processPeak > peakFromCache)
@@ -649,7 +709,12 @@ public sealed class CoreAudioManager : ICoreAudioManager
                         var displayName = ProcessPresentationHelper.GetFriendlyName(
                             processName,
                             string.IsNullOrWhiteSpace(session.DisplayName) ? null : session.DisplayName);
-                        _processAssignments.TryGetValue(processName, out var assignedChannelId);
+                        string? assignedChannelId;
+                        lock (_gate)
+                        {
+                            _processAssignments.TryGetValue(processName, out assignedChannelId);
+                        }
+
                         freshSessions.Add(new CachedRenderSession(
                             processId,
                             processName,
@@ -672,7 +737,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         }
         catch (Exception ex)
         {
-            Faulted?.Invoke(this, new AudioFaultEventArgs
+            PublishFault(new AudioFaultEventArgs
             {
                 Message = "Unable to collect active audio sessions.",
                 Exception = ex
@@ -681,6 +746,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
         List<CachedRenderSession> mergedCache;
         List<CachedRenderSession> staleCache;
+        var addedSessions = 0;
         lock (_gate)
         {
             var existingByKey = _cachedRenderSessions.ToDictionary(session => session.CacheKey, StringComparer.OrdinalIgnoreCase);
@@ -701,6 +767,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
                 else
                 {
                     mergedCache.Add(freshSession);
+                    addedSessions++;
                 }
             }
 
@@ -710,7 +777,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
         }
 
         DisposeCachedRenderSessions(staleCache);
-        return staleCache.Count > 0;
+        return staleCache.Count > 0 || addedSessions > 0;
     }
 
     private IReadOnlyList<ActiveAudioSessionInfo> BuildActiveSessionsSnapshot(IReadOnlyList<CachedRenderSession> cachedSessions)
@@ -740,14 +807,6 @@ public sealed class CoreAudioManager : ICoreAudioManager
             .AsReadOnly();
     }
 
-    private void ApplyAllChannelOutputs()
-    {
-        foreach (var channel in Channels)
-        {
-            ApplyChannelOutput(channel);
-        }
-    }
-
     private void ApplyChannelOutput(AudioChannelState channel)
     {
         if (channel.Role == AudioChannelRole.Master || channel.Role == AudioChannelRole.Microphone)
@@ -762,28 +821,34 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
     private void ApplyAssignedSessionLevels(AudioChannelState channel)
     {
-        if (channel.AssignedProcesses.Count == 0)
+        string[] assignedProcesses;
+        List<CachedRenderSession> cachedSessions;
+        float volume;
+        bool isMuted;
+        lock (_gate)
+        {
+            assignedProcesses = channel.AssignedProcesses.ToArray();
+            cachedSessions = _cachedRenderSessions.ToList();
+            volume = channel.Volume;
+            isMuted = channel.IsMuted;
+        }
+
+        if (assignedProcesses.Length == 0)
         {
             return;
         }
 
-        List<CachedRenderSession> cachedSessions;
-        lock (_gate)
-        {
-            cachedSessions = _cachedRenderSessions.ToList();
-        }
-
         foreach (var cachedSession in cachedSessions)
         {
-            if (!channel.AssignedProcesses.Contains(cachedSession.ProcessName, StringComparer.OrdinalIgnoreCase))
+            if (!assignedProcesses.Contains(cachedSession.ProcessName, StringComparer.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             try
             {
-                cachedSession.Session.SimpleAudioVolume.Volume = channel.Volume;
-                cachedSession.Session.SimpleAudioVolume.Mute = channel.IsMuted;
+                cachedSession.Session.SimpleAudioVolume.Volume = volume;
+                cachedSession.Session.SimpleAudioVolume.Mute = isMuted;
             }
             catch
             {
@@ -904,17 +969,120 @@ public sealed class CoreAudioManager : ICoreAudioManager
         }
     }
 
-    private void RemoveProcessFromAllChannels(string processName)
+    private List<AudioChannelState> RemoveProcessFromAllChannels(string processName)
     {
+        var owners = new List<AudioChannelState>();
         lock (_gate)
         {
             foreach (var channel in _channels)
             {
-                channel.AssignedProcesses.RemoveAll(name =>
-                    string.Equals(name, processName, StringComparison.OrdinalIgnoreCase));
+                if (channel.AssignedProcesses.RemoveAll(name =>
+                        string.Equals(name, processName, StringComparison.OrdinalIgnoreCase)) > 0)
+                {
+                    owners.Add(channel);
+                }
             }
 
             _processAssignments.Remove(processName);
+        }
+
+        return owners;
+    }
+
+    private void ResetProcessSessions(string processName)
+    {
+        List<CachedRenderSession> cachedSessions;
+        lock (_gate)
+        {
+            cachedSessions = _cachedRenderSessions.ToList();
+        }
+
+        foreach (var cachedSession in cachedSessions)
+        {
+            if (!string.Equals(cachedSession.ProcessName, processName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                cachedSession.Session.SimpleAudioVolume.Volume = 1f;
+                cachedSession.Session.SimpleAudioVolume.Mute = false;
+            }
+            catch
+            {
+                // Ignore single session errors.
+            }
+        }
+    }
+
+    private List<AudioChannelState> GetEndpointChannels()
+    {
+        lock (_gate)
+        {
+            return _channels
+                .Where(channel => channel.Role is AudioChannelRole.Master or AudioChannelRole.Microphone)
+                .ToList();
+        }
+    }
+
+    private void AdoptEndpointState(AudioChannelState channel)
+    {
+        if (channel.Endpoint is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var device = _deviceEnumerator.GetDevice(channel.Endpoint.Id);
+            var endpointVolume = device.AudioEndpointVolume;
+            channel.Volume = Clamp01(endpointVolume.MasterVolumeLevelScalar);
+            channel.IsMuted = endpointVolume.Mute;
+        }
+        catch (Exception ex)
+        {
+            PublishEndpointFault(channel, "read endpoint state", ex);
+        }
+    }
+
+    private void MarkRecentlySet(string channelId) => _recentSetTicks[channelId] = Environment.TickCount64;
+
+    private bool IsRecentlySet(string channelId) =>
+        _recentSetTicks.TryGetValue(channelId, out var ticks) &&
+        Environment.TickCount64 - ticks < RecentSetGraceMilliseconds;
+
+    private void PublishFault(AudioFaultEventArgs args)
+    {
+        var key = $"{args.ChannelId}|{args.Message}";
+        var now = Environment.TickCount64;
+        if (_faultTicks.TryGetValue(key, out var last) && now - last < FaultThrottleMilliseconds)
+        {
+            return;
+        }
+
+        _faultTicks[key] = now;
+        Faulted?.Invoke(this, args);
+    }
+
+    private AudioChannelState Snapshot(AudioChannelState channel)
+    {
+        lock (_gate)
+        {
+            var copy = new AudioChannelState
+            {
+                Id = channel.Id,
+                Name = channel.Name,
+                Role = channel.Role,
+                IconPath = channel.IconPath,
+                Endpoint = channel.Endpoint,
+                Volume = channel.Volume,
+                IsMuted = channel.IsMuted,
+                PeakValue = channel.PeakValue
+            };
+
+            copy.AssignedProcesses.AddRange(channel.AssignedProcesses);
+            return copy;
         }
     }
 
@@ -1051,7 +1219,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
     {
         if (e.Exception is not null)
         {
-            Faulted?.Invoke(this, new AudioFaultEventArgs
+            PublishFault(new AudioFaultEventArgs
             {
                 ChannelId = "mic",
                 Message = "Microphone peak meter stopped unexpectedly.",
@@ -1158,14 +1326,14 @@ public sealed class CoreAudioManager : ICoreAudioManager
     {
         ChannelChanged?.Invoke(this, new AudioChannelChangedEventArgs
         {
-            Channel = channel,
+            Channel = Snapshot(channel),
             Reason = reason
         });
     }
 
     private void PublishMissingChannel(string channelId)
     {
-        Faulted?.Invoke(this, new AudioFaultEventArgs
+        PublishFault(new AudioFaultEventArgs
         {
             ChannelId = channelId,
             Message = $"Channel '{channelId}' was not found."
@@ -1174,7 +1342,7 @@ public sealed class CoreAudioManager : ICoreAudioManager
 
     private void PublishEndpointFault(AudioChannelState channel, string operation, Exception exception)
     {
-        Faulted?.Invoke(this, new AudioFaultEventArgs
+        PublishFault(new AudioFaultEventArgs
         {
             ChannelId = channel.Id,
             Message = $"Unable to {operation} for {channel.Name}.",

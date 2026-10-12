@@ -4,7 +4,7 @@ Audio Manager is a Windows desktop mixer for people who want fast control over a
 
 It is designed around MIDI controllers, keyboard hotkeys, tray usage, and a compact dark UI.
 
-Current release: `1.0.3`.
+Current release: `1.0.4`.
 
 ## Screenshots
 

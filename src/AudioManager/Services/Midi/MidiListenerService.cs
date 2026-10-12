@@ -8,10 +8,11 @@ namespace AudioManager.Services.Midi;
 public sealed class MidiListenerService : IMidiListenerService
 {
     private readonly object _gate = new();
+    private readonly object _stateLock = new();
     private readonly List<MidiIn> _midiInputs = [];
     private readonly Dictionary<string, int> _lastControlValues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _lastControlDirections = new(StringComparer.OrdinalIgnoreCase);
-    private IReadOnlyList<MidiBinding> _bindings = [];
+    private volatile IReadOnlyList<MidiBinding> _bindings = [];
 
     public event EventHandler<MidiControlChangeEventArgs>? ControlChanged;
     public event EventHandler<MidiNoteEventArgs>? NoteChanged;
@@ -115,12 +116,13 @@ public sealed class MidiListenerService : IMidiListenerService
 
     public void UpdateBindings(IReadOnlyList<MidiBinding> bindings)
     {
-        _bindings = bindings;
+        // Snapshot: the caller keeps mutating its list while MIDI callbacks enumerate ours.
+        _bindings = bindings.ToArray();
     }
 
     public void ResetEncoderBaselines(IEnumerable<MidiMessageIdentity> identities)
     {
-        lock (_gate)
+        lock (_stateLock)
         {
             foreach (var identity in identities)
             {
@@ -164,13 +166,14 @@ public sealed class MidiListenerService : IMidiListenerService
             return [selected];
         }
 
-        if (int.TryParse(midiDeviceId.Split(':')[0], out var parsedIndex))
+        // Device indexes shift when hardware is re-plugged, so fall back to the product name, never the index.
+        var separator = midiDeviceId.IndexOf(':');
+        var name = separator >= 0 ? midiDeviceId[(separator + 1)..] : midiDeviceId;
+        var byName = devices.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (byName is not null)
         {
-            var byIndex = devices.FirstOrDefault(candidate => candidate.Index == parsedIndex);
-            if (byIndex is not null)
-            {
-                return [byIndex];
-            }
+            return [byName];
         }
 
         return [];
@@ -195,11 +198,26 @@ public sealed class MidiListenerService : IMidiListenerService
         }
 
         _midiInputs.Clear();
-        _lastControlValues.Clear();
-        _lastControlDirections.Clear();
+        lock (_stateLock)
+        {
+            _lastControlValues.Clear();
+            _lastControlDirections.Clear();
+        }
     }
 
     private void OnMessageReceived(object? sender, MidiInMessageEventArgs e)
+    {
+        try
+        {
+            HandleMessage(sender, e);
+        }
+        catch
+        {
+            // Native MIDI callback: an exception here would terminate the process.
+        }
+    }
+
+    private void HandleMessage(object? sender, MidiInMessageEventArgs e)
     {
         if (TryParseRawControlChange(e.RawMessage, out var rawMidiChannel, out var rawControllerNumber, out var rawControllerValue))
         {
@@ -266,6 +284,14 @@ public sealed class MidiListenerService : IMidiListenerService
     }
 
     private int ComputeWrappedTickDelta(string key, int currentValue)
+    {
+        lock (_stateLock)
+        {
+            return ComputeWrappedTickDeltaLocked(key, currentValue);
+        }
+    }
+
+    private int ComputeWrappedTickDeltaLocked(string key, int currentValue)
     {
         if (!_lastControlValues.TryGetValue(key, out var previousValue))
         {

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -13,13 +14,24 @@ namespace AudioManager.Services;
 public static class ProcessPresentationHelper
 {
     private const uint ShgfiIcon = 0x000000100;
-    private static readonly Dictionary<string, string> ExecutablePathCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan PlaceholderRetryInterval = TimeSpan.FromSeconds(30);
+    private static readonly ConcurrentDictionary<string, string> ExecutablePathCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, string> FriendlyNameCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, IconCacheEntry> IconCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record IconCacheEntry(ImageSource Icon, bool IsPlaceholder, DateTime CreatedAtUtc);
 
     public static string GetFriendlyName(string processName, string? sessionDisplayName = null)
     {
+        if (FriendlyNameCache.TryGetValue(processName, out var cachedName))
+        {
+            return cachedName;
+        }
+
         var fromProcess = TryGetFriendlyNameFromRunningProcess(processName);
         if (!string.IsNullOrWhiteSpace(fromProcess))
         {
+            FriendlyNameCache[processName] = fromProcess;
             return fromProcess;
         }
 
@@ -44,20 +56,41 @@ public static class ProcessPresentationHelper
 
     public static ImageSource? GetProcessIcon(string processName)
     {
-        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName)))
+        if (IconCache.TryGetValue(processName, out var cached) &&
+            (!cached.IsPlaceholder || DateTime.UtcNow - cached.CreatedAtUtc < PlaceholderRetryInterval))
         {
-            using (process)
+            return cached.Icon;
+        }
+
+        var icon = ResolveProcessIcon(processName);
+        if (icon is not null)
+        {
+            IconCache[processName] = new IconCacheEntry(icon, false, DateTime.UtcNow);
+            return icon;
+        }
+
+        var placeholder = CreatePlaceholderIcon(processName);
+        IconCache[processName] = new IconCacheEntry(placeholder, true, DateTime.UtcNow);
+        return placeholder;
+    }
+
+    private static ImageSource? ResolveProcessIcon(string processName)
+    {
+        var processes = SafeGetProcesses(processName);
+        try
+        {
+            foreach (var process in processes)
             {
                 try
                 {
                     var filePath = TryGetExecutablePath(process);
-                    if (filePath is not null)
+                    if (filePath is null)
                     {
-                        ExecutablePathCache[processName] = filePath;
-                        OnPathResolved?.Invoke(processName, filePath);
+                        continue;
                     }
 
-                    var icon = GetProcessIcon(process);
+                    RememberPath(processName, filePath);
+                    var icon = ExtractIconFromFile(filePath);
                     if (icon is not null)
                     {
                         return icon;
@@ -65,7 +98,15 @@ public static class ProcessPresentationHelper
                 }
                 catch
                 {
+                    // Protected or exiting process; try the next one.
                 }
+            }
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
             }
         }
 
@@ -73,18 +114,37 @@ public static class ProcessPresentationHelper
         {
             if (ExecutablePathCache.TryGetValue(processName, out var cachedPath))
             {
-                var cachedIcon = ExtractIconFromFile(cachedPath);
-                if (cachedIcon is not null)
-                {
-                    return cachedIcon;
-                }
+                return ExtractIconFromFile(cachedPath);
             }
         }
         catch
         {
         }
 
-        return CreatePlaceholderIcon(processName);
+        return null;
+    }
+
+    private static Process[] SafeGetProcesses(string processName)
+    {
+        try
+        {
+            return Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName));
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static void RememberPath(string processName, string filePath)
+    {
+        var changed = !ExecutablePathCache.TryGetValue(processName, out var existing) ||
+                      !string.Equals(existing, filePath, StringComparison.OrdinalIgnoreCase);
+        ExecutablePathCache[processName] = filePath;
+        if (changed)
+        {
+            OnPathResolved?.Invoke(processName, filePath);
+        }
     }
 
     public static ImageSource? GetProcessIcon(Process process)
@@ -186,35 +246,35 @@ public static class ProcessPresentationHelper
 
     private static string? TryGetFriendlyNameFromRunningProcess(string processName)
     {
+        var processes = SafeGetProcesses(processName);
         try
         {
-            var process = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName))
-                .FirstOrDefault();
-
-            if (process is null)
-            {
-                return null;
-            }
-
-            using (process)
+            foreach (var process in processes)
             {
                 var filePath = TryGetExecutablePath(process);
-                if (filePath is not null)
+                if (filePath is null)
                 {
-                    ExecutablePathCache[processName] = filePath;
-                    OnPathResolved?.Invoke(processName, filePath);
+                    continue;
                 }
 
-                var versionInfo = filePath is null
-                    ? null
-                    : FileVersionInfo.GetVersionInfo(filePath);
-                return CleanDisplayName(versionInfo?.FileDescription, processName)
-                       ?? CleanDisplayName(versionInfo?.ProductName, processName);
+                RememberPath(processName, filePath);
+                var versionInfo = FileVersionInfo.GetVersionInfo(filePath);
+                return CleanDisplayName(versionInfo.FileDescription, processName)
+                       ?? CleanDisplayName(versionInfo.ProductName, processName);
             }
+
+            return null;
         }
         catch
         {
             return null;
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
+            }
         }
     }
 

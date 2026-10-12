@@ -18,6 +18,7 @@ public sealed class ChannelStripViewModel : ObservableObject
     private bool _isRenaming;
     private string _pendingName;
     private bool _isUpdatingFromModel;
+    private string[] _lastAssignedProcesses = [];
     private readonly DispatcherTimer _peakAnimationTimer;
 
     private static readonly bool EnablePeakSmoothing = true;
@@ -209,32 +210,46 @@ public sealed class ChannelStripViewModel : ObservableObject
 
     public void Update(AudioChannelState state, bool updateVolume = true)
     {
+        var metadataChanged = false;
+        var assignmentsChanged = false;
         _isUpdatingFromModel = true;
         try
         {
+            var endpointName = FormatEndpointLabel(state);
+            var endpointId = state.Endpoint?.Id;
+            metadataChanged = !string.Equals(Name, state.Name, StringComparison.Ordinal) ||
+                              !string.Equals(IconPath, state.IconPath, StringComparison.Ordinal) ||
+                              !string.Equals(EndpointName, endpointName, StringComparison.Ordinal) ||
+                              !string.Equals(_selectedEndpointId, endpointId, StringComparison.Ordinal);
+
             Name = state.Name;
             if (!IsRenaming)
             {
                 PendingName = state.Name;
             }
             IconPath = state.IconPath;
-            EndpointName = FormatEndpointLabel(state);
-            _selectedEndpointId = state.Endpoint?.Id;
+            EndpointName = endpointName;
+            _selectedEndpointId = endpointId;
 
-            AssignedProcessIcons.Clear();
-            VisibleAssignedProcessIcons.Clear();
-            HiddenAssignedProcessIcons.Clear();
-            foreach (var processName in state.AssignedProcesses)
+            // Icon extraction is expensive; peak updates arrive ~10x per second and must not rebuild it.
+            var assigned = state.AssignedProcesses.ToArray();
+            if (!_lastAssignedProcesses.SequenceEqual(assigned, StringComparer.OrdinalIgnoreCase))
             {
-                var icon = ProcessPresentationHelper.GetProcessIcon(processName);
-                if (icon is not null)
+                _lastAssignedProcesses = assigned;
+                assignmentsChanged = true;
+                AssignedProcessIcons.Clear();
+                foreach (var processName in assigned)
                 {
-                    var displayName = ProcessPresentationHelper.GetFriendlyName(processName);
-                    AssignedProcessIcons.Add(new AssignedProcessIconViewModel(processName, displayName, icon));
+                    var icon = ProcessPresentationHelper.GetProcessIcon(processName);
+                    if (icon is not null)
+                    {
+                        var displayName = ProcessPresentationHelper.GetFriendlyName(processName);
+                        AssignedProcessIcons.Add(new AssignedProcessIconViewModel(processName, displayName, icon));
+                    }
                 }
-            }
 
-            RebuildAssignedProcessPresentation();
+                RebuildAssignedProcessPresentation();
+            }
 
             if (updateVolume)
             {
@@ -249,19 +264,26 @@ public sealed class ChannelStripViewModel : ObservableObject
             _isUpdatingFromModel = false;
         }
 
-        OnPropertyChanged(nameof(Name));
-        OnPropertyChanged(nameof(SpacedName));
-        OnPropertyChanged(nameof(PendingName));
-        OnPropertyChanged(nameof(IconPath));
-        OnPropertyChanged(nameof(EndpointName));
-        OnPropertyChanged(nameof(SpacedEndpointName));
-        OnPropertyChanged(nameof(SelectedEndpointId));
+        if (metadataChanged)
+        {
+            OnPropertyChanged(nameof(Name));
+            OnPropertyChanged(nameof(SpacedName));
+            OnPropertyChanged(nameof(PendingName));
+            OnPropertyChanged(nameof(IconPath));
+            OnPropertyChanged(nameof(EndpointName));
+            OnPropertyChanged(nameof(SpacedEndpointName));
+            OnPropertyChanged(nameof(SelectedEndpointId));
+        }
+
         OnPropertyChanged(nameof(DisplayPeakValue));
-        OnPropertyChanged(nameof(HasAssignedApps));
-        OnPropertyChanged(nameof(HasNoAssignedApps));
-        OnPropertyChanged(nameof(HasHiddenAssignedApps));
-        OnPropertyChanged(nameof(HasSingleRowAssignedApps));
-        OnPropertyChanged(nameof(HasMultiRowAssignedApps));
+        if (assignmentsChanged)
+        {
+            OnPropertyChanged(nameof(HasAssignedApps));
+            OnPropertyChanged(nameof(HasNoAssignedApps));
+            OnPropertyChanged(nameof(HasHiddenAssignedApps));
+            OnPropertyChanged(nameof(HasSingleRowAssignedApps));
+            OnPropertyChanged(nameof(HasMultiRowAssignedApps));
+        }
     }
 
     public void SetVolumeFromController(float volume)
